@@ -1,0 +1,43 @@
+{
+	"id": "settings-feishu-database",
+	"displayName": "飞书多维表格配置",
+	"version": "1.0.0",
+	"description": "配置飞书多维表格，获取数据表并生成对应的接口代码",
+	"keywords": ["飞书", "多维表格", "Feishu", "Base"],
+	"repository": "",
+	"engines": {
+		"HBuilderX": "^3.6.0"
+	},
+	"dcloudext": {
+		"type": "uni_modules",
+		"sale": {
+			"regular": {
+				"price": 0
+			}
+		},
+		"declaration": {
+			"ads": "无",
+			"data": "无",
+			"permissions": "无"
+		}
+	},
+	"uni_modules": {
+		"platforms": {
+			"client": {
+				"uni-app": {
+					"vue": {
+						"vue2": true,
+						"vue3": true
+					},
+					"web": {
+						"safari": true,
+						"chrome": true
+					},
+					"mp": {
+						"weixin": true
+					}
+				}
+			}
+		}
+	}
+}

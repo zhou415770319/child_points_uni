@@ -1,0 +1,81 @@
+import type { DeviceInfo, NetworkInfo, BatteryInfo } from '../types/device'
+
+/**
+ * 获取设备信息 - iOS实现
+ */
+export function getDeviceInfo(): DeviceInfo {
+	// 使用UTS的Objective-C桥接
+	const UIDevice = NSClassFromString('UIDevice')
+	const device = UIDevice.currentDevice()
+	
+	const UIScreen = NSClassFromString('UIScreen')
+	const mainScreen = UIScreen.mainScreen()
+	const bounds = mainScreen.bounds()
+	const scale = mainScreen.scale()
+	
+	return {
+		model: device.model(),
+		brand: 'Apple',
+		osVersion: device.systemVersion(),
+		osType: 'ios',
+		uuid: device.identifierForVendor()?.UUIDString() || 'unknown',
+		appVersion: NSBundle.mainBundle().infoDictionary()?['CFBundleShortVersionString'] || 'unknown',
+		appVersionCode: NSBundle.mainBundle().infoDictionary()?['CFBundleVersion'] || 'unknown',
+		deviceName: device.name(),
+		screenWidth: bounds.size.width * scale,
+		screenHeight: bounds.size.height * scale,
+		pixelRatio: scale
+	}
+}
+
+/**
+ * 获取网络信息 - iOS实现
+ */
+export function getNetworkInfo(): NetworkInfo {
+	const reachabilityManager = createReachabilityManager()
+	const status = reachabilityManager?.currentReachabilityStatus() || 0
+	
+	let type: 'wifi' | '4g' | '3g' | '2g' | 'none' | 'unknown' = 'none'
+	let isConnected = false
+	
+	if (status == 0) {
+		type = 'none'
+		isConnected = false
+	} else if (status == 1) {
+		type = 'wifi'
+		isConnected = true
+	} else if (status == 2) {
+		type = '4g'
+		isConnected = true
+	} else {
+		type = 'unknown'
+		isConnected = true
+	}
+	
+	return {
+		type,
+		isConnected
+	}
+}
+
+// 创建网络可达性管理器
+function createReachabilityManager(): any {
+	// 简化实现，实际项目中需要导入SystemConfiguration框架
+	return null
+}
+
+/**
+ * 获取电池信息 - iOS实现
+ */
+export function getBatteryInfo(): BatteryInfo {
+	const UIDevice = NSClassFromString('UIDevice')
+	const device = UIDevice.currentDevice()
+	
+	// 开启电池监控
+	device.setBatteryMonitoringEnabled(true)
+	
+	return {
+		level: Math.round(device.batteryLevel() * 100),
+		isCharging: device.batteryState() == 1 || device.batteryState() == 2
+	}
+}

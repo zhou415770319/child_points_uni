@@ -1,0 +1,48 @@
+import type { DeviceInfo, NetworkInfo, BatteryInfo } from './types/device'
+
+// #ifdef APP-ANDROID
+import { getDeviceInfo, getNetworkInfo, getBatteryInfo } from './app-android/index.uts'
+// #endif
+
+// #ifdef APP-IOS
+import { getDeviceInfo, getNetworkInfo, getBatteryInfo } from './app-ios/index.uts'
+// #endif
+
+// #ifdef H5
+import { getDeviceInfo, getNetworkInfo, getBatteryInfo } from './web/index.ts'
+// #endif
+
+// #ifdef MP-WEIXIN
+import { getDeviceInfo, getNetworkInfo, getBatteryInfo } from './mp-weixin/index.ts'
+// #endif
+
+// #ifdef MP-ALIPAY
+import { getDeviceInfo, getNetworkInfo, getBatteryInfo } from './mp-alipay/index.ts'
+// #endif
+
+/**
+ * 获取设备信息
+ */
+export function getDeviceInfo(): DeviceInfo {
+	return getDeviceInfo()
+}
+
+/**
+ * 获取网络信息
+ */
+export function getNetworkInfo(): NetworkInfo {
+	return getNetworkInfo()
+}
+
+/**
+ * 获取电池信息
+ */
+export function getBatteryInfo(): BatteryInfo {
+	return getBatteryInfo()
+}
+
+export default {
+	getDeviceInfo,
+	getNetworkInfo,
+	getBatteryInfo
+}

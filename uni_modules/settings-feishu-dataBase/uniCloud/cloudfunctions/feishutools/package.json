@@ -1,0 +1,7 @@
+{
+  "name": "feishutools",
+  "dependencies": {},
+  "extensions": {
+    "uni-cloud-jql": {}
+  }
+}
