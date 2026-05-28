@@ -11,7 +11,7 @@
 		<view class="category-tabs">
 			<scroll-view scroll-x class="tabs-scroll">
 				<view class="tabs-inner">
-					<view class="category-tab" v-for="cat in categories" :key="cat.id" :class="{ active: selectedCategory === cat.id }" @click="selectedCategory = cat.id">
+					<view class="category-tab" v-for="cat in categories" :key="cat.id" :class="{ active: selectedCategory === cat.id }" @click="selectCategory(cat.id)">
 						{{ cat.icon }} {{ cat.name }}
 					</view>
 				</view>
@@ -104,12 +104,24 @@
 		},
 		methods: {
 			/**
-			 * 加载礼品数据（从多维表格获取）
+			 * 选择分类
 			 */
-			async loadGifts() {
+			selectCategory(categoryId) {
+				this.selectedCategory = categoryId
+				this.loadGifts(categoryId)
+			},
+			
+			/**
+			 * 加载礼品数据（从多维表格获取）
+			 * @param {string} category - 商品分类
+			 */
+			async loadGifts(category = 'all') {
 				try {
 					uni.showLoading({ title: '加载中...' })
-					const result = await feishuRequest.queryRecords('礼品表')
+					
+					// 构建过滤条件，如果不是"全部"则添加分类过滤
+					const filter = category === 'all' ? {} : { category: category }
+					const result = await feishuRequest.queryRecords('礼品表', filter)
 					
 					if (result.success && result.data && result.data.length > 0) {
 						// 先保存 file_token，后续批量获取下载URL
@@ -246,7 +258,7 @@
 			}
 		},
 		onLoad() {
-			this.loadGifts()
+			this.loadGifts(this.selectedCategory)
 			this.loadBalance()
 		}
 	}

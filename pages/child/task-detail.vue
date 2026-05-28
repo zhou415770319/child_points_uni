@@ -52,13 +52,13 @@
 				<!-- 进行中状态 -->
 				<template v-else-if="task.status === '进行中'">
 					<button class="action-btn pause" @click="pauseTask">暂停</button>
-					<button class="action-btn complete" @click="completeTask">完成</button>
+					<button class="action-btn complete" @click="showSubmitModal = true">提交</button>
 				</template>
 				
 				<!-- 暂停状态 -->
 				<template v-else-if="task.status === '暂停'">
 					<button class="action-btn resume" @click="resumeTask">继续</button>
-					<button class="action-btn complete" @click="completeTask">完成</button>
+					<button class="action-btn complete" @click="showSubmitModal = true">提交</button>
 				</template>
 				
 				<!-- 已完成状态 -->
@@ -86,6 +86,70 @@
 				</view>
 			</view>
 		</view>
+
+		<!-- AI 评价展示（任务完成后显示） -->
+		<view class="section" v-if="task?.completed && aiEvaluation">
+			<text class="section-title">🤖 AI 评价</text>
+			<view class="ai-card">
+				<view class="ai-score">
+					<text class="score-value">{{ aiEvaluation.score }}</text>
+					<text class="score-label">评分</text>
+				</view>
+				<view class="ai-stars">
+					<text v-for="i in 5" :key="i" class="star">{{ i <= Math.floor(aiEvaluation.score / 2) ? '★' : '☆' }}</text>
+				</view>
+				<view class="ai-comment">
+					<text class="comment-label">评价内容：</text>
+					<text class="comment-text">{{ aiEvaluation.comment }}</text>
+				</view>
+				<view class="ai-suggestion">
+					<text class="suggestion-label">改进建议：</text>
+					<text class="suggestion-text">{{ aiEvaluation.suggestion }}</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 提交任务弹窗 -->
+		<view class="modal-overlay" v-if="showSubmitModal" @click="showSubmitModal = false">
+			<view class="modal-content" @click.stop>
+				<view class="modal-header">
+					<text class="modal-title">提交任务</text>
+					<text class="modal-close" @click="showSubmitModal = false">✕</text>
+				</view>
+				<view class="modal-body">
+					<!-- 文件上传区域 -->
+					<view class="upload-section">
+						<text class="upload-title">📷 上传证明图片</text>
+						<view class="upload-list">
+							<view class="upload-item" v-for="(file, index) in uploadedFiles" :key="index">
+								<image class="upload-image" :src="file.path" mode="aspectFill" />
+								<view class="upload-delete" @click="removeFile(index)">✕</view>
+							</view>
+							<view class="upload-add" @click="chooseImage" v-if="uploadedFiles.length < 9">
+								<text class="add-icon">+</text>
+								<text class="add-text">添加图片</text>
+							</view>
+						</view>
+					</view>
+
+					<!-- 备注信息 -->
+					<view class="remark-section">
+						<text class="remark-title">📝 备注信息</text>
+						<textarea 
+							class="remark-input" 
+							v-model="remark" 
+							placeholder="请输入完成任务的备注信息..."
+							:maxlength="500"
+						></textarea>
+						<text class="remark-count">{{ remark.length }}/500</text>
+					</view>
+				</view>
+				<view class="modal-footer">
+					<button class="btn btn-secondary" @click="showSubmitModal = false">取消</button>
+					<button class="btn btn-primary" @click="submitTask">确认提交</button>
+				</view>
+			</view>
+		</view>
 	</view>
 </template>
 
@@ -99,14 +163,19 @@
 				task: null,
 				taskId: '',
 				timer: null,
-				children: []  // 儿童列表，用于根据child_id获取儿童名称
+				currentChild: null,  // 当前登录的儿童信息
+				children: [],  // 儿童列表，用于根据child_id获取儿童名称
+				showSubmitModal: false,  // 提交任务弹窗
+				uploadedFiles: [],  // 上传的文件列表
+				remark: '',  // 备注信息
+				aiEvaluation: null  // AI评价结果
 			}
 		},
-		onLoad(options) {
+		async onLoad(options) {
 			if (options && options.id) {
 				this.taskId = options.id
-				this.loadChildren()  // 先加载儿童列表
-				this.loadTaskDetail()
+				await this.loadChildren()  // 确保先加载儿童列表
+				await this.loadTaskDetail()
 			}
 		},
 		onUnload() {
@@ -130,6 +199,11 @@
 			 */
 			async loadChildren() {
 				try {
+					// 先获取当前登录的儿童信息
+					this.currentChild = await UserManager.getCurrentChild()
+					console.log('[Task Detail] 当前儿童:', this.currentChild)
+					
+					// 再获取家长的所有儿童列表
 					const currentParent = await UserManager.getCurrentParent()
 					if (currentParent && currentParent.phone) {
 						this.children = await UserManager.getChildrenByParent(currentParent.phone)
@@ -144,8 +218,20 @@
 			 * 根据child_id获取儿童名称
 			 */
 			getChildName(childId) {
-				if (!childId) return '未关联'
-				const child = this.children.find(c => c.child_id === childId || c.id === childId)
+				if (!childId) {
+					// 如果任务没有绑定儿童，使用当前登录的儿童信息
+					return this.currentChild?.name || '未关联'
+				}
+				// 先尝试匹配当前登录的儿童
+				if (this.currentChild && (this.currentChild.child_id === childId || this.currentChild.id === childId || 
+					String(this.currentChild.child_id) === String(childId) || String(this.currentChild.id) === String(childId))) {
+					return this.currentChild.name
+				}
+				// 再从儿童列表中查找
+				const child = this.children.find(c => 
+					c.child_id === childId || c.id === childId ||
+					String(c.child_id) === String(childId) || String(c.id) === String(childId)
+				)
 				return child ? child.name : '未知儿童'
 			},
 			
@@ -172,9 +258,19 @@
 							
 							// 处理child_id字段
 							let childId = taskData.fields.child_id || ''
-							if (Array.isArray(childId) && childId[0] && childId[0].text) {
-								childId = childId[0].text
+							if (Array.isArray(childId)) {
+								if (childId[0] && childId[0].text) {
+									childId = childId[0].text
+								} else if (childId[0] && typeof childId[0] === 'object' && childId[0].record_id) {
+									// 如果是引用类型字段，提取record_id
+									childId = childId[0].record_id
+								} else if (childId[0]) {
+									childId = String(childId[0])
+								} else {
+									childId = ''
+								}
 							}
+							childId = String(childId).trim()
 							
 							this.task = {
 								id: taskData.record_id,
@@ -190,6 +286,11 @@
 								child_id: childId,
 								child_name: this.getChildName(childId)
 							}
+							
+							// 如果任务已完成，尝试获取AI评价
+							if (this.task.completed) {
+								await this.loadAiEvaluation()
+							}
 						} else {
 							this.task = this.getMockTask()
 						}
@@ -202,6 +303,42 @@
 				}
 				
 				uni.hideLoading()
+			},
+			
+			/**
+			 * 加载AI评价
+			 */
+			async loadAiEvaluation() {
+				try {
+					// 模拟AI评价数据（实际项目中应调用AI接口）
+					this.aiEvaluation = this.getMockAiEvaluation()
+				} catch (error) {
+					console.error('[Task Detail] 加载AI评价失败:', error)
+				}
+			},
+			
+			/**
+			 * 获取模拟AI评价数据
+			 */
+			getMockAiEvaluation() {
+				const evaluations = [
+					{
+						score: 10,
+						comment: '太棒了！任务完成得非常出色，字迹工整，内容完整。继续保持！',
+						suggestion: '建议下次可以尝试用不同的方式表达，增加一些自己的想法。'
+					},
+					{
+						score: 8,
+						comment: '任务完成得不错，基本要求都达到了。',
+						suggestion: '还有一些小细节可以改进，比如书写可以更工整一些。'
+					},
+					{
+						score: 9,
+						comment: '完成得很好！思路清晰，表达流畅。',
+						suggestion: '可以尝试挑战更有难度的任务，提升自己的能力。'
+					}
+				]
+				return evaluations[Math.floor(Math.random() * evaluations.length)]
 			},
 			
 			getMockTask() {
@@ -240,6 +377,34 @@
 					'暂停': '暂停'
 				}
 				return texts[status] || status
+			},
+			
+			/**
+			 * 选择图片
+			 */
+			chooseImage() {
+				uni.chooseImage({
+					count: 9 - this.uploadedFiles.length,
+					sizeType: ['compressed'],
+					sourceType: ['album', 'camera'],
+					success: (res) => {
+						this.uploadedFiles = this.uploadedFiles.concat(res.tempFiles.map(file => ({
+							path: file.path,
+							size: file.size
+						})))
+					},
+					fail: (err) => {
+						console.error('[Task Detail] 选择图片失败:', err)
+						uni.showToast({ title: '选择图片失败', icon: 'none' })
+					}
+				})
+			},
+			
+			/**
+			 * 删除图片
+			 */
+			removeFile(index) {
+				this.uploadedFiles.splice(index, 1)
 			},
 			
 			/**
@@ -332,9 +497,9 @@
 			},
 			
 			/**
-			 * 完成任务
+			 * 提交任务（带文件和备注）
 			 */
-			async completeTask() {
+			async submitTask() {
 				if (!this.task || this.task.completed) return
 				
 				try {
@@ -342,19 +507,39 @@
 					
 					this.stopTimer()
 					
-					const result = await feishuRequest.updateRecord('任务表', this.task.id, {
-						status: '已完成'
-					})
+					// 准备提交数据
+					const updateData = {
+						status: '已完成',
+						elapsed_time: this.task.elapsed_time || 0
+					}
+					
+					// 如果有备注，添加备注
+					if (this.remark.trim()) {
+						updateData.remark = this.remark.trim()
+					}
+					
+					// 如果有上传的文件，这里可以添加文件上传逻辑
+					if (this.uploadedFiles.length > 0) {
+						console.log('[Task Detail] 需要上传的文件:', this.uploadedFiles)
+						// 实际项目中这里会调用文件上传API
+					}
+					
+					const result = await feishuRequest.updateRecord('任务表', this.task.id, updateData)
 					
 					if (result.success) {
 						this.task.status = '已完成'
 						this.task.completed = true
+						
+						// 模拟AI评价
+						this.aiEvaluation = this.getMockAiEvaluation()
+						
+						this.showSubmitModal = false
 						uni.showToast({ title: `+${this.task.base_points} 积分`, icon: 'success' })
 					} else {
 						uni.showToast({ title: '提交失败', icon: 'none' })
 					}
 				} catch (error) {
-					console.error('[Task Detail] 完成任务失败:', error)
+					console.error('[Task Detail] 提交任务失败:', error)
 					uni.showToast({ title: '提交失败', icon: 'none' })
 				}
 				
@@ -668,5 +853,224 @@
 		font-size: 36rpx;
 		font-weight: bold;
 		color: #ff9500;
+	}
+
+	/* AI评价样式 */
+	.ai-card {
+		background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+		border-radius: 15rpx;
+		padding: 30rpx;
+	}
+
+	.ai-score {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		margin-bottom: 20rpx;
+	}
+
+	.score-value {
+		font-size: 60rpx;
+		font-weight: bold;
+		color: #2196f3;
+	}
+
+	.score-label {
+		font-size: 24rpx;
+		color: #666;
+	}
+
+	.ai-stars {
+		display: flex;
+		justify-content: center;
+		margin-bottom: 20rpx;
+	}
+
+	.star {
+		font-size: 40rpx;
+		color: #ffc107;
+		margin: 0 5rpx;
+	}
+
+	.ai-comment, .ai-suggestion {
+		margin-bottom: 15rpx;
+	}
+
+	.ai-comment:last-child, .ai-suggestion:last-child {
+		margin-bottom: 0;
+	}
+
+	.comment-label, .suggestion-label {
+		font-size: 26rpx;
+		color: #666;
+		font-weight: bold;
+	}
+
+	.comment-text, .suggestion-text {
+		font-size: 28rpx;
+		color: #333;
+		line-height: 1.6;
+	}
+
+	/* 弹窗样式 */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: flex-end;
+		z-index: 1000;
+	}
+
+	.modal-content {
+		width: 100%;
+		max-height: 80vh;
+		background-color: #fff;
+		border-radius: 30rpx 30rpx 0 0;
+		overflow: hidden;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 30rpx;
+		border-bottom: 1rpx solid #f0f0f0;
+	}
+
+	.modal-title {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333;
+	}
+
+	.modal-close {
+		font-size: 36rpx;
+		color: #999;
+		padding: 10rpx;
+	}
+
+	.modal-body {
+		padding: 30rpx;
+		max-height: 60vh;
+		overflow-y: auto;
+	}
+
+	.upload-section {
+		margin-bottom: 30rpx;
+	}
+
+	.upload-title, .remark-title {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #333;
+		display: block;
+		margin-bottom: 20rpx;
+	}
+
+	.upload-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 15rpx;
+	}
+
+	.upload-item {
+		width: calc(33.33% - 10rpx);
+		position: relative;
+	}
+
+	.upload-image {
+		width: 100%;
+		height: 180rpx;
+		border-radius: 12rpx;
+		object-fit: cover;
+	}
+
+	.upload-delete {
+		position: absolute;
+		top: -10rpx;
+		right: -10rpx;
+		width: 40rpx;
+		height: 40rpx;
+		background-color: #f44336;
+		color: #fff;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 24rpx;
+	}
+
+	.upload-add {
+		width: calc(33.33% - 10rpx);
+		height: 180rpx;
+		border: 2rpx dashed #ddd;
+		border-radius: 12rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.add-icon {
+		font-size: 48rpx;
+		color: #999;
+		margin-bottom: 10rpx;
+	}
+
+	.add-text {
+		font-size: 24rpx;
+		color: #999;
+	}
+
+	.remark-section {
+		position: relative;
+	}
+
+	.remark-input {
+		width: 100%;
+		height: 200rpx;
+		background-color: #fafafa;
+		border-radius: 12rpx;
+		padding: 20rpx;
+		font-size: 28rpx;
+		color: #333;
+		box-sizing: border-box;
+	}
+
+	.remark-count {
+		position: absolute;
+		right: 20rpx;
+		bottom: 20rpx;
+		font-size: 24rpx;
+		color: #999;
+	}
+
+	.modal-footer {
+		display: flex;
+		gap: 20rpx;
+		padding: 20rpx 30rpx 40rpx;
+		border-top: 1rpx solid #f0f0f0;
+	}
+
+	.btn {
+		flex: 1;
+		height: 80rpx;
+		border-radius: 40rpx;
+		font-size: 30rpx;
+		border: none;
+
+		&.btn-primary {
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			color: #fff;
+		}
+
+		&.btn-secondary {
+			background-color: #f0f0f0;
+			color: #333;
+		}
 	}
 </style>

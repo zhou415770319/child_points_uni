@@ -102,6 +102,12 @@
 			}
 		},
 		{
+			"path": "pages/child/points-history",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/list/list",
 			"style": {
 				"enablePullDownRefresh": true,

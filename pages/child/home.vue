@@ -12,10 +12,11 @@
 				</view>
 				<text class="switch-icon">↕️</text>
 			</view>
-			<view class="points-badge">
-				<text class="points-value">{{ totalPoints || 0 }}</text>
-				<text class="points-label">积分</text>
-			</view>
+			<view class="points-badge" @click="goToPointsHistory">
+					<text class="points-value">{{ totalPoints || 0 }}</text>
+					<text class="points-label">积分</text>
+					<text class="points-arrow">›</text>
+				</view>
 		</view>
 
 		<view class="streak-card">
@@ -91,13 +92,16 @@
 						<text class="reward-name">{{ reward.name }}</text>
 						<text class="reward-desc">{{ reward.description }}</text>
 					</view>
-					<text class="reward-price">{{ reward.price }}积分</text>
+					<view class="reward-right">
+						<text class="reward-price">{{ reward.price }}积分</text>
+						<view class="reward-status" :class="reward.status">{{ reward.status }}</view>
+					</view>
 				</view>
 			</view>
 			<button class="go-mall-btn" @click="goToMall">去商城兑换</button>
 		</view>
 
-		<view class="section">
+		<view class="section" v-if="learningBook">
 			<text class="section-title">📚 正在学习</text>
 			<view class="learning-card">
 				<view class="learning-icon">{{ learningBook.icon }}</view>
@@ -107,7 +111,7 @@
 						<view class="progress-bar">
 							<view class="progress-fill" :style="{ width: learningBook.progress + '%' }"></view>
 						</view>
-						<text class="progress-text">{{ learningBook.progress }}%</text>
+						<text class="progress-text">{{ learningBook.currentPage }}/{{ learningBook.totalPages }} ({{ learningBook.progress }}%)</text>
 					</view>
 				</view>
 				<button class="continue-btn" @click="continueLearning">继续学习</button>
@@ -163,11 +167,7 @@
 				streakDays: 15,
 				streakProgress: 71,
 				todayTasks: [],
-				rewards: [
-					{ id: 1, name: '糖果礼包', description: '美味糖果', price: 100, icon: '🍬' },
-					{ id: 2, name: '卡通贴纸', description: '可爱贴纸', price: 50, icon: '🎨' },
-					{ id: 3, name: '小玩具', description: '益智玩具', price: 200, icon: '🧩' }
-				],
+				rewards: [],
 				learningBook: {
 					title: '小学语文三年级上册',
 					progress: 65,
@@ -194,6 +194,12 @@
 			
 			// 加载今日任务
 			await this.loadTodayTasks()
+			
+			// 加载奖励记录
+			await this.loadRewards()
+			
+			// 加载正在学习的教材
+			await this.loadLearningBook()
 			
 			// 监听任务详情页返回后的刷新事件
 			uni.$on('refreshTasks', async () => {
@@ -250,6 +256,152 @@
 				} catch (error) {
 					console.error('[Child Home] 加载积分失败:', error)
 				}
+			},
+			
+			/**
+			 * 解析多维表格文本字段
+			 * @param {any} field - 字段值
+			 * @returns {string} 解析后的文本
+			 */
+			parseTextField(field) {
+				if (!field) return ''
+				// 处理新格式：{ type: 1, value: [{ text: 'xxx', type: 'text' }] }
+				if (typeof field === 'object' && field.type === 1 && field.value && Array.isArray(field.value) && field.value.length > 0) {
+					return field.value[0].text || ''
+				}
+				// 处理旧格式：[{ text: 'xxx' }]
+				if (Array.isArray(field) && field[0] && field[0].text) {
+					return field[0].text
+				}
+				// 处理字符串
+				if (typeof field === 'string') {
+					return field
+				}
+				return ''
+			},
+			
+			/**
+			 * 加载我的奖励（从兑换记录表获取最近3条）
+			 */
+			async loadRewards() {
+				try {
+					if (!this.currentChild || !this.currentChild.id) {
+						this.rewards = this.getMockRewards()
+						return
+					}
+					
+					const filter = { child_id: this.currentChild.child_id || this.currentChild.id }
+					const result = await feishuRequest.queryRecords('兑换记录表', filter)
+					
+					if (result.success && result.data && result.data.length > 0) {
+						// 按时间倒序排列，取最近3条
+						this.rewards = result.data
+							.sort((a, b) => new Date(b.fields.created_at || 0) - new Date(a.fields.created_at || 0))
+							.slice(0, 3)
+							.map(item => ({
+								id: item.record_id,
+								name: this.parseTextField(item.fields.gift_name) || '未知礼品',
+								description: this.parseTextField(item.fields.description) || '',
+								price: item.fields.points || 0,
+								status: item.fields.status || '待处理',
+								icon: this.getRewardIcon(item.fields.category)
+							}))
+					} else {
+						this.rewards = this.getMockRewards()
+					}
+				} catch (error) {
+					console.error('[Child Home] 加载奖励记录失败:', error)
+					this.rewards = this.getMockRewards()
+				}
+			},
+			
+			/**
+			 * 获取奖励图标
+			 */
+			getRewardIcon(category) {
+				const icons = {
+					'toy': '🧩',
+					'book': '📚',
+					'food': '🍬',
+					'stationery': '✏️',
+					default: '🎁'
+				}
+				return icons[category] || icons.default
+			},
+			
+			/**
+			 * 获取mock奖励数据
+			 */
+			getMockRewards() {
+				return [
+					{ id: 1, name: '糖果礼包', description: '美味糖果', price: 100, icon: '🍬', status: '已完成' },
+					{ id: 2, name: '卡通贴纸', description: '可爱贴纸', price: 50, icon: '🎨', status: '待发货' },
+					{ id: 3, name: '小玩具', description: '益智玩具', price: 200, icon: '🧩', status: '待处理' }
+				]
+			},
+			
+			/**
+			 * 加载正在学习的教材（从教材表获取最近学习的教材）
+			 */
+			async loadLearningBook() {
+				try {
+					if (!this.currentChild || !this.currentChild.id) {
+						this.learningBook = null
+						return
+					}
+					
+					const filter = { child_id: this.currentChild.child_id || this.currentChild.id }
+					const result = await feishuRequest.queryRecords('教材表', filter)
+					
+					if (result.success && result.data && result.data.length > 0) {
+						// 按当前页码排序，取进度最大的一条（最近学习的）
+						const latestBook = result.data.sort((a, b) => 
+							(b.fields.current_page || 0) - (a.fields.current_page || 0)
+						)[0]
+						
+						if (latestBook) {
+							// 计算学习进度：(current_page / total_pages) * 100
+							const currentPage = latestBook.fields.current_page || 0
+							const totalPages = latestBook.fields.total_pages || 1
+							const progress = Math.round((currentPage / totalPages) * 100)
+							
+							this.learningBook = {
+								title: this.parseTextField(latestBook.fields.name) || '未知教材',
+								progress: Math.min(progress, 100),
+								icon: this.getBookIcon(latestBook.fields.subject),
+								currentPage: currentPage,
+								totalPages: totalPages
+							}
+						} else {
+							this.learningBook = null
+						}
+					} else {
+						this.learningBook = null
+					}
+				} catch (error) {
+					console.error('[Child Home] 加载教材失败:', error)
+					this.learningBook = null
+				}
+			},
+			
+			/**
+			 * 获取教材图标
+			 */
+			getBookIcon(subject) {
+				const icons = {
+					'语文': '📖',
+					'math': '🧮',
+					'maths': '🧮',
+					'数学': '🧮',
+					'english': '🔤',
+					'英语': '🔤',
+					'science': '🔬',
+					'科学': '🔬',
+					'history': '📜',
+					'历史': '📜',
+					default: '📚'
+				}
+				return icons[subject] || icons.default
 			},
 			
 			/**
@@ -533,6 +685,9 @@
 			goToMall() {
 				uni.navigateTo({ url: '/pages/child/mall' })
 			},
+			goToPointsHistory() {
+				uni.navigateTo({ url: '/pages/child/points-history' })
+			},
 			continueLearning() {
 				uni.showToast({ title: '继续学习', icon: 'none' })
 			},
@@ -650,19 +805,27 @@
 		border-radius: 20rpx;
 		padding: 15rpx 25rpx;
 		text-align: center;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
 	}
 
 	.points-value {
 		font-size: 36rpx;
 		font-weight: bold;
 		color: #ffd700;
-		display: block;
 	}
 
 	.points-label {
 		font-size: 22rpx;
 		color: #fff;
 		opacity: 0.8;
+	}
+
+	.points-arrow {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.6);
+		margin-top: 5rpx;
 	}
 
 	.streak-card {
@@ -917,10 +1080,50 @@
 		color: #999;
 	}
 
+	.reward-right {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 8rpx;
+	}
+
 	.reward-price {
 		font-size: 26rpx;
 		font-weight: bold;
 		color: #ff9500;
+	}
+
+	.reward-status {
+		font-size: 22rpx;
+		padding: 6rpx 12rpx;
+		border-radius: 15rpx;
+		background-color: #e0e0e0;
+		color: #666;
+
+		&.待处理 {
+			background-color: #fff3e0;
+			color: #ff9500;
+		}
+
+		&.待发货 {
+			background-color: #e3f2fd;
+			color: #2196f3;
+		}
+
+		&.已发货 {
+			background-color: #e8f5e9;
+			color: #4caf50;
+		}
+
+		&.已完成 {
+			background-color: #e8f5e9;
+			color: #4caf50;
+		}
+
+		&.已取消 {
+			background-color: #f5f5f5;
+			color: #999;
+		}
 	}
 
 	.go-mall-btn {

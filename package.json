@@ -9,7 +9,7 @@
     "搜索",
     "uni-id实例",
     "留言板"
-],
+  ],
   "repository": "https://gitcode.net/dcloud/uni-starter",
   "engines": {
     "HBuilderX": "^3.2.6",
@@ -40,7 +40,9 @@
     "widescreen": "x"
   },
   "uni_modules": {
-    "dependencies": ["uni-id-pages"],
+    "dependencies": [
+      "uni-id-pages"
+    ],
     "encrypt": [],
     "platforms": {
       "cloud": {
@@ -64,8 +66,8 @@
             "android": "√",
             "ios": "√",
             "harmony": {
-                "extVersion": "2.2.1",
-                "minVersion": ""
+              "extVersion": "2.2.1",
+              "minVersion": ""
             }
           },
           "mp": {
@@ -102,7 +104,19 @@
       }
     }
   },
+  "scripts": {
+    "dev:h5": "uni",
+    "build:h5": "uni build",
+    "dev:mp-weixin": "uni -p mp-weixin",
+    "build:mp-weixin": "uni build -p mp-weixin"
+  },
   "dependencies": {
     "qrcodejs2": "^0.0.2"
+  },
+  "devDependencies": {
+    "@dcloudio/uni-cli-shared": "^2.0.2-5000720260410001",
+    "@dcloudio/uni-h5": "^2.0.2-5000720260410001",
+    "@dcloudio/uni-mp-weixin": "^2.0.2-5000720260410001",
+    "@dcloudio/vite-plugin-uni": "^3.0.0-alpha-3000020210521001"
   }
 }
