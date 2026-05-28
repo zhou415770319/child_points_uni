@@ -27,19 +27,9 @@
 							icon: '🏠'
 						},
 						{
-							pagePath: '/pages/parent/tasks',
-							text: '任务',
-							icon: '📋'
-						},
-						{
 							pagePath: '/pages/parent/manage',
 							text: '管理',
 							icon: '⚙️'
-						},
-						{
-							pagePath: '/pages/parent/points',
-							text: '积分',
-							icon: '⭐'
 						},
 						{
 							pagePath: '/pages/parent/report',

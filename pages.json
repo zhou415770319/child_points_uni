@@ -30,6 +30,12 @@
 			}
 		},
 		{
+			"path": "pages/parent/children/detail",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/parent/tasks",
 			"style": {
 				"navigationBarTitleText": "任务管理"
@@ -75,6 +81,18 @@
 			"path": "pages/parent/manage",
 			"style": {
 				"navigationBarTitleText": "管理中心"
+			}
+		},
+		{
+			"path": "pages/parent/learning-schedule",
+			"style": {
+				"navigationBarTitleText": "学习时间设置"
+			}
+		},
+		{
+			"path": "pages/parent/goods-manage",
+			"style": {
+				"navigationBarTitleText": "商城管理"
 			}
 		},
 		{
@@ -370,20 +388,10 @@
 			"selectedIconPath": "static/tabbar/list_active.png",
 			"text": "首页"
 		}, {
-			"pagePath": "pages/parent/tasks",
-			"iconPath": "static/tabbar/grid.png",
-			"selectedIconPath": "static/tabbar/grid_active.png",
-			"text": "任务"
-		}, {
 			"pagePath": "pages/parent/manage",
 			"iconPath": "static/tabbar/list.png",
 			"selectedIconPath": "static/tabbar/list_active.png",
 			"text": "管理"
-		}, {
-			"pagePath": "pages/parent/points",
-			"iconPath": "static/tabbar/me.png",
-			"selectedIconPath": "static/tabbar/me_active.png",
-			"text": "积分"
 		}, {
 			"pagePath": "pages/parent/report",
 			"iconPath": "static/tabbar/list.png",

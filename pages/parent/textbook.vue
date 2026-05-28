@@ -80,6 +80,10 @@
 						<text class="form-label">教材简介</text>
 						<textarea class="form-textarea" v-model="formData.description" placeholder="请输入教材简介"></textarea>
 					</view>
+					<view class="form-item">
+						<text class="form-label">资源链接</text>
+						<input class="form-input" v-model="formData.resource_url" placeholder="绑定相关资源地址，如纪录片、视频链接等" />
+					</view>
 				</view>
 				<view class="modal-footer">
 					<button class="btn btn-secondary" @click="closeModal">取消</button>
@@ -104,7 +108,8 @@
 					author: '',
 					subject: '',
 					chapters: '',
-					description: ''
+					description: '',
+					resource_url: ''
 				},
 				subjects: ['语文', '数学', '英语', '科学', '美术', '音乐'],
 				subjectIndex: 0
@@ -145,7 +150,8 @@
 								progress: item.fields.progress || 0,
 								status: item.fields.status || '待学习',
 								icon: this.getSubjectIcon(item.fields.subject),
-								description: item.fields.description || ''
+								description: item.fields.description || '',
+								resource_url: item.fields.resource_url || ''
 							}
 						})
 					} else {
@@ -187,40 +193,62 @@
 			closeModal() {
 				this.showAddModal = false
 				this.editingBook = null
-				this.formData = { title: '', author: '', subject: '', chapters: '', description: '' }
+				this.formData = { title: '', author: '', subject: '', chapters: '', description: '', resource_url: '' }
 				this.subjectIndex = 0
 			},
-			saveBook() {
+			async saveBook() {
 				if (!this.formData.title || !this.formData.author || !this.formData.subject) {
 					uni.showToast({ title: '请填写完整信息', icon: 'none' })
 					return
 				}
 
-				if (this.editingBook) {
-					const index = this.books.findIndex(b => b.id === this.editingBook.id)
-					if (index >= 0) {
-						this.books[index] = {
-							...this.books[index],
-							title: this.formData.title,
-							author: this.formData.author,
-							subject: this.formData.subject,
-							chapters: parseInt(this.formData.chapters) || this.books[index].chapters
+				uni.showLoading({ title: '保存中...' })
+
+				const bookData = {
+					title: this.formData.title,
+					author: this.formData.author,
+					subject: this.formData.subject,
+					chapters: parseInt(this.formData.chapters) || 0,
+					description: this.formData.description || '',
+					resource_url: this.formData.resource_url || '',
+					status: '待学习',
+					progress: 0
+				}
+
+				try {
+					if (this.editingBook) {
+						const result = await feishuRequest.updateRecord('教材表', this.editingBook.id, bookData)
+						if (result.success) {
+							const index = this.books.findIndex(b => b.id === this.editingBook.id)
+							if (index >= 0) {
+								this.books[index] = {
+									...this.books[index],
+									...bookData
+								}
+							}
+							uni.showToast({ title: '修改成功', icon: 'success' })
+						} else {
+							uni.showToast({ title: '修改失败', icon: 'none' })
+						}
+					} else {
+						const result = await feishuRequest.addRecord('教材表', bookData)
+						if (result.success) {
+							this.books.unshift({
+								id: result.recordId,
+								...bookData,
+								icon: this.getSubjectIcon(bookData.subject)
+							})
+							uni.showToast({ title: '添加成功', icon: 'success' })
+						} else {
+							uni.showToast({ title: '添加失败', icon: 'none' })
 						}
 					}
-					uni.showToast({ title: '修改成功', icon: 'success' })
-				} else {
-					this.books.unshift({
-						id: Date.now(),
-						title: this.formData.title,
-						author: this.formData.author,
-						subject: this.formData.subject,
-						chapters: parseInt(this.formData.chapters) || 0,
-						progress: 0,
-						status: '待学习',
-						icon: '📖'
-					})
-					uni.showToast({ title: '添加成功', icon: 'success' })
+				} catch (error) {
+					console.error('[Textbook] 保存教材失败:', error)
+					uni.showToast({ title: '保存失败', icon: 'none' })
 				}
+
+				uni.hideLoading()
 				this.closeModal()
 			},
 			importBook() {

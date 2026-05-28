@@ -189,17 +189,11 @@
 			const now = new Date()
 			this.currentDate = `${now.getMonth() + 1}月${now.getDate()}日`
 			
-			// 加载当前儿童信息
+			// 先加载当前儿童信息（必须先获取）
 			await this.loadCurrentChild()
 			
-			// 加载今日任务
-			await this.loadTodayTasks()
-			
-			// 加载奖励记录
-			await this.loadRewards()
-			
-			// 加载正在学习的教材
-			await this.loadLearningBook()
+			// 批量加载首页数据（只调用一次云函数）
+			await this.loadHomeData()
 			
 			// 监听任务详情页返回后的刷新事件
 			uni.$on('refreshTasks', async () => {
@@ -226,6 +220,115 @@
 		},
 		methods: {
 			/**
+			 * 批量加载首页数据（只调用一次云函数，减少调用次数）
+			 */
+			async loadHomeData() {
+				try {
+					if (!this.currentChild || !this.currentChild.id) {
+						// 如果没有当前儿童，使用mock数据
+						this.todayTasks = this.getMockTasks()
+						this.rewards = this.getMockRewards()
+						this.learningBook = null
+						return
+					}
+					
+					uni.showLoading({ title: '加载中...' })
+					
+					// 一次云函数调用获取所有数据
+					const result = await feishuRequest.getHomeData(this.currentChild.child_id || this.currentChild.id)
+					
+					if (result.success && result.data) {
+						// 1. 处理任务数据
+						if (result.data.tasks && result.data.tasks.length > 0) {
+							this.todayTasks = result.data.tasks.map(item => {
+								const title = item.fields.title 
+									? (Array.isArray(item.fields.title) && item.fields.title[0] && item.fields.title[0].text 
+										? item.fields.title[0].text 
+										: item.fields.title)
+									: ''
+								const description = item.fields.description 
+									? (Array.isArray(item.fields.description) && item.fields.description[0] && item.fields.description[0].text 
+										? item.fields.description[0].text 
+										: item.fields.description)
+									: ''
+								return {
+									id: item.record_id,
+									title: title,
+									description: description,
+									type: item.fields.type || '',
+									type_text: item.fields.type_text || '',
+									difficulty: item.fields.difficulty || '简单',
+									base_points: item.fields.base_points || 10,
+									child_id: item.fields.child_id || '',
+									status: item.fields.status || '未开始',
+									completed: item.fields.status === '已完成',
+									elapsed_time: item.fields.elapsed_time || 0
+								}
+							})
+						} else {
+							this.todayTasks = this.getMockTasks()
+						}
+						
+						// 2. 处理奖励数据
+						if (result.data.rewards && result.data.rewards.length > 0) {
+							this.rewards = result.data.rewards
+								.sort((a, b) => new Date(b.fields.created_at || 0) - new Date(a.fields.created_at || 0))
+								.slice(0, 3)
+								.map(item => ({
+									id: item.record_id,
+									name: this.parseTextField(item.fields.gift_name) || '未知礼品',
+									description: this.parseTextField(item.fields.description) || '',
+									price: item.fields.points || 0,
+									status: item.fields.status || '待处理',
+									icon: this.getRewardIcon(item.fields.category)
+								}))
+						} else {
+							this.rewards = this.getMockRewards()
+						}
+						
+						// 3. 处理教材数据
+						if (result.data.textbooks && result.data.textbooks.length > 0) {
+							const latestBook = result.data.textbooks.sort((a, b) => 
+								(b.fields.current_page || 0) - (a.fields.current_page || 0)
+							)[0]
+							
+							if (latestBook) {
+								const currentPage = latestBook.fields.current_page || 0
+								const totalPages = latestBook.fields.total_pages || 1
+								const progress = Math.round((currentPage / totalPages) * 100)
+								
+								this.learningBook = {
+									title: this.parseTextField(latestBook.fields.name) || '未知教材',
+									progress: Math.min(progress, 100),
+									icon: this.getBookIcon(latestBook.fields.subject),
+									currentPage: currentPage,
+									totalPages: totalPages
+								}
+							} else {
+								this.learningBook = null
+							}
+						} else {
+							this.learningBook = null
+						}
+					} else {
+						this.todayTasks = this.getMockTasks()
+						this.rewards = this.getMockRewards()
+						this.learningBook = null
+					}
+					
+					uni.hideLoading()
+				} catch (error) {
+					console.error('[Child Home] 批量加载首页数据失败:', error)
+					// 失败时降级到单个方法加载
+					await Promise.all([
+						this.loadTodayTasks(),
+						this.loadRewards(),
+						this.loadLearningBook()
+					])
+				}
+			},
+			
+			/**
 			 * 加载当前儿童信息（从儿童表获取）
 			 */
 			async loadCurrentChild() {
@@ -234,10 +337,11 @@
 					console.log('[Child Home] 当前儿童信息:', this.currentChild)
 					
 					if (this.currentChild) {
-						// 加载该家长绑定的所有儿童（用于切换）
-						await this.loadChildrenList()
-						// 加载儿童积分
-						this.loadChildPoints()
+						// 并行加载儿童列表和积分信息（两者无依赖）
+						await Promise.all([
+							this.loadChildrenList(),
+							this.loadChildPoints()
+						])
 					}
 				} catch (error) {
 					console.error('[Child Home] 加载儿童信息失败:', error)
@@ -683,7 +787,7 @@
 				return `${String(displayMinutes).padStart(2, '0')}:${String(displaySeconds).padStart(2, '0')}`
 			},
 			goToMall() {
-				uni.navigateTo({ url: '/pages/child/mall' })
+				uni.switchTab({ url: '/pages/child/mall' })
 			},
 			goToPointsHistory() {
 				uni.navigateTo({ url: '/pages/child/points-history' })

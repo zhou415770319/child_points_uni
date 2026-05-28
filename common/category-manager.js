@@ -12,7 +12,6 @@ class CategoryManager {
     const shouldRefresh = forceRefresh !== null 
       ? forceRefresh 
       : this.getForceRefresh()
-    debugger
     // 如果不是强制刷新，先尝试从缓存获取
     if (!shouldRefresh) {
       const cached = this.getCategories()

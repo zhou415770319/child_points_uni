@@ -554,6 +554,122 @@ async function getImageUrls(params) {
 	}
 }
 
+/**
+ * 批量获取首页数据（减少云函数调用次数）
+ * @param {Object} params
+ * @param {string} params.baseToken - 多维表格Token
+ * @param {string} params.childId - 儿童ID
+ * @param {Object} params.tables - 表名到表ID的映射
+ */
+async function getHomeData(params) {
+	console.log('[FeishuTools] 获取首页数据:', JSON.stringify(params))
+	
+	const { baseToken, childId, tables } = params
+	
+	if (!baseToken || !childId || !tables) {
+		throw new Error('baseToken、childId和tables不能为空')
+	}
+	
+	const tokenResult = await getAccessToken()
+	const results = {
+		tasks: [],
+		rewards: [],
+		textbooks: []
+	}
+	
+	// 并行获取所有数据
+	const promises = []
+	
+	// 1. 获取今日任务
+	if (tables['任务表']) {
+		promises.push((async () => {
+			try {
+				const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${baseToken}/tables/${tables['任务表']}/records/search`
+				const response = await uniCloud.httpclient.request(url, {
+					method: 'POST',
+					headers: {
+						'Authorization': 'Bearer ' + tokenResult.accessToken,
+						'Content-Type': 'application/json'
+					},
+					data: {
+						filter: buildFilter({ child_id: childId })
+					},
+					dataType: 'json'
+				})
+				if (response.data.code === 0) {
+					results.tasks = response.data.data.items || []
+				}
+			} catch (error) {
+				console.error('[FeishuTools] 获取任务数据失败:', error.message)
+				results.tasks = []
+			}
+		})())
+	}
+	
+	// 2. 获取兑换记录（最近3条）
+	if (tables['兑换记录表']) {
+		promises.push((async () => {
+			try {
+				const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${baseToken}/tables/${tables['兑换记录表']}/records/search`
+				const response = await uniCloud.httpclient.request(url, {
+					method: 'POST',
+					headers: {
+						'Authorization': 'Bearer ' + tokenResult.accessToken,
+						'Content-Type': 'application/json'
+					},
+					data: {
+						filter: buildFilter({ child_id: childId }),
+						page_size: 3
+					},
+					dataType: 'json'
+				})
+				if (response.data.code === 0) {
+					results.rewards = response.data.data.items || []
+				}
+			} catch (error) {
+				console.error('[FeishuTools] 获取兑换记录失败:', error.message)
+				results.rewards = []
+			}
+		})())
+	}
+	
+	// 3. 获取教材数据
+	if (tables['教材表']) {
+		promises.push((async () => {
+			try {
+				const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${baseToken}/tables/${tables['教材表']}/records/search`
+				const response = await uniCloud.httpclient.request(url, {
+					method: 'POST',
+					headers: {
+						'Authorization': 'Bearer ' + tokenResult.accessToken,
+						'Content-Type': 'application/json'
+					},
+					data: {
+						filter: buildFilter({ child_id: childId })
+					},
+					dataType: 'json'
+				})
+				if (response.data.code === 0) {
+					results.textbooks = response.data.data.items || []
+				}
+			} catch (error) {
+				console.error('[FeishuTools] 获取教材数据失败:', error.message)
+				results.textbooks = []
+			}
+		})())
+	}
+	
+	// 等待所有请求完成
+	await Promise.all(promises)
+	
+	console.log('[FeishuTools] 获取首页数据完成:', JSON.stringify(results))
+	
+	return {
+		success: true,
+		data: results
+	}
+}
+
 // 导出方法
 module.exports = {
 	getAccessToken,
@@ -566,5 +682,6 @@ module.exports = {
 	updateRecord,
 	deleteRecord,
 	batchAddRecords,
-	getImageUrls
+	getImageUrls,
+	getHomeData
 }

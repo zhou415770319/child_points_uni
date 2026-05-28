@@ -5,7 +5,10 @@
 				<view class="back-btn" @click="goBack">
 					<text class="back-icon">‹</text>
 				</view>
-				<text class="header-title">积分记录</text>
+				<view class="header-center">
+					<text class="header-title">积分记录</text>
+					<text class="child-name">{{ currentChild?.name || '未知儿童' }}</text>
+				</view>
 				<view class="header-right">
 					<text class="total-points">{{ totalPoints }} 积分</text>
 				</view>
@@ -40,8 +43,8 @@
 </template>
 
 <script>
-import { UserManager } from '@/common/UserManager.js'
-import feishuRequest from '@/common/feishu-request.js'
+import UserManager from '@/common/user-manager.js'
+import { feishuRequest } from '@/common/feishu-request.js'
 
 export default {
 	data() {
@@ -60,9 +63,10 @@ export default {
 			return this.historyList.filter(item => item.type === this.activeTab)
 		}
 	},
-	async onLoad() {
-		await this.loadCurrentChild()
-		await this.loadHistory()
+	onLoad() {
+		this.loadCurrentChild().then(() => {
+			this.loadHistory()
+		})
 	},
 	methods: {
 		async loadCurrentChild() {
@@ -177,12 +181,23 @@ export default {
 	font-weight: bold;
 }
 
-.header-title {
+.header-center {
 	flex: 1;
+	text-align: center;
+}
+
+.header-title {
 	font-size: 32rpx;
 	font-weight: bold;
 	color: #fff;
-	text-align: center;
+	display: block;
+}
+
+.child-name {
+	font-size: 24rpx;
+	color: rgba(255, 255, 255, 0.8);
+	display: block;
+	margin-top: 5rpx;
 }
 
 .header-right {

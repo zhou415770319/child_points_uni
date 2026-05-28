@@ -236,6 +236,30 @@ class UserManager {
   }
 
   /**
+   * 获取缓存的儿童列表
+   * @returns {Array} - 儿童列表
+   */
+  static getChildren() {
+    try {
+      const cached = uni.getStorageSync('childrenList')
+      if (cached) {
+        return JSON.parse(cached)
+      }
+    } catch (e) {
+      console.warn('[UserManager] 解析缓存的儿童列表失败:', e)
+    }
+    return []
+  }
+
+  /**
+   * 设置缓存的儿童列表
+   * @param {Array} children - 儿童列表
+   */
+  static setChildren(children) {
+    uni.setStorageSync('childrenList', JSON.stringify(children))
+  }
+
+  /**
    * 判断是否已登录
    * @returns {boolean} - 是否已登录
    */

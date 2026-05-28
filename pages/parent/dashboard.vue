@@ -31,7 +31,7 @@
 				<text class="section-link" @click="goToChildren">查看全部 ›</text>
 			</view>
 			<view class="children-list">
-				<view class="child-card" v-for="child in children" :key="child.id">
+				<view class="child-card" v-for="child in children" :key="child.id" @click="goToChildDetail(child)">
 					<view class="child-avatar">
 						<image v-if="child.avatar && child.avatar.startsWith('http')" class="avatar-img" :src="child.avatar" mode="aspectFill" />
 						<text v-else>{{ child.name.charAt(0) }}</text>
@@ -44,6 +44,7 @@
 						<text class="points-value">{{ child.total_points }}</text>
 						<text class="points-label">积分</text>
 					</view>
+					<text class="arrow">›</text>
 				</view>
 			</view>
 		</view>
@@ -120,10 +121,13 @@
 			const now = new Date()
 			this.currentDate = `${now.getMonth() + 1}月${now.getDate()}日 ${['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()]}`
 			
-			// 先加载用户信息和儿童列表，等待完成后再加载今日任务列表
+			// 先加载用户信息和儿童列表，等待完成后再加载其他数据
 			await this.loadUserData()
-			// 加载今日任务列表
-			await this.loadTodayTasks()
+			// 并行加载今日任务和待审核打卡
+			await Promise.all([
+				this.loadTodayTasks(),
+				this.loadPendingCheckins()
+			])
 		},
 		onShow() {
 			if (this.$refs.tabBar) {
@@ -155,6 +159,9 @@
 						}))
 						console.log('[Dashboard] 儿童列表:', this.children)
 						
+						// 缓存儿童列表，供其他页面使用
+						UserManager.setChildren(this.children)
+						
 						// 计算总积分
 						this.totalPoints = this.children.reduce((sum, child) => sum + (child.total_points || 0), 0)
 					}
@@ -173,14 +180,20 @@
 			},
 			
 			/**
-			 * 加载今日任务（从多维表格获取）
+			 * 加载今日任务（从多维表格获取，筛选掉待审核的任务）
 			 */
 			async loadTodayTasks() {
 				try {
 					const result = await feishuRequest.queryRecords('任务表')
 					
 					if (result.success && result.data && result.data.length > 0) {
-						this.todayTasksList = result.data.slice(0, 5).map(item => {
+						// 筛选掉状态为待审核的任务
+						const filteredTasks = result.data.filter(item => {
+							const status = item.fields.status || ''
+							return status !== '待审核' && status !== 'reviewing'
+						})
+						
+						this.todayTasksList = filteredTasks.slice(0, 5).map(item => {
 							// 处理title字段：飞书多维表格返回格式可能是[{text: "值"}]
 							const title = item.fields.title 
 								? (Array.isArray(item.fields.title) && item.fields.title[0] && item.fields.title[0].text 
@@ -192,6 +205,8 @@
 							let childId = item.fields.child_id || ''
 							if (Array.isArray(childId) && childId[0] && childId[0].text) {
 								childId = childId[0].text
+							} else if (typeof childId === 'object' && childId.type === 1 && childId.value && Array.isArray(childId.value) && childId.value.length > 0) {
+								childId = childId.value[0].text || ''
 							}
 							
 							return {
@@ -209,6 +224,54 @@
 					}
 				} catch (error) {
 					console.error('[Dashboard] 加载今日任务失败:', error)
+				}
+			},
+			
+			/**
+			 * 加载待审核打卡
+			 */
+			async loadPendingCheckins() {
+				try {
+					const result = await feishuRequest.queryRecords('任务表')
+					
+					if (result.success && result.data && result.data.length > 0) {
+						// 筛选出状态为待审核的任务作为待审核打卡
+						const pendingTasks = result.data.filter(item => {
+							const status = item.fields.status || ''
+							return status === '待审核' || status === 'reviewing'
+						})
+						
+						this.pendingCheckins = pendingTasks.slice(0, 5).map(item => {
+							const title = item.fields.title 
+								? (Array.isArray(item.fields.title) && item.fields.title[0] && item.fields.title[0].text 
+									? item.fields.title[0].text 
+									: item.fields.title)
+								: ''
+							
+							let childId = item.fields.child_id || ''
+							if (Array.isArray(childId) && childId[0] && childId[0].text) {
+								childId = childId[0].text
+							} else if (typeof childId === 'object' && childId.type === 1 && childId.value && Array.isArray(childId.value) && childId.value.length > 0) {
+								childId = childId.value[0].text || ''
+							}
+							
+							const childName = this.getChildName(childId)
+							const createdAt = item.fields.created_at || item.fields.updated_at || ''
+							const date = createdAt ? new Date(createdAt) : new Date()
+							const timeStr = `${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+							
+							return {
+								id: item.record_id,
+								child_name: childName,
+								task_title: title,
+								checkin_time: timeStr
+							}
+						})
+						this.pendingReviews = this.pendingCheckins.length
+						console.log('[Dashboard] 待审核打卡:', this.pendingCheckins)
+					}
+				} catch (error) {
+					console.error('[Dashboard] 加载待审核打卡失败:', error)
 				}
 			},
 			async loadCategories() {
@@ -236,8 +299,11 @@
 			goToChildren() {
 				uni.navigateTo({ url: '/pages/parent/children' })
 			},
+			goToChildDetail(child) {
+				uni.navigateTo({ url: `/pages/parent/children/detail?id=${child.id}` })
+			},
 			goToTasks() {
-				uni.switchTab({ url: '/pages/parent/tasks' })
+				uni.navigateTo({ url: '/pages/parent/tasks' })
 			},
 			goToCheckins() {
 				uni.navigateTo({ url: '/pages/parent/checkins' })
@@ -362,6 +428,12 @@
 		padding: 20rpx;
 		background-color: #fafafa;
 		border-radius: 12rpx;
+	}
+	
+	.arrow {
+		font-size: 32rpx;
+		color: #ccc;
+		margin-left: auto;
 	}
 
 	.child-avatar {

@@ -272,6 +272,35 @@ class FeishuRequest {
 	}
 
 	/**
+	 * 批量获取首页数据（减少云函数调用次数）
+	 * @param {string} childId - 儿童ID
+	 * @returns {Promise<Object>} 包含任务、奖励、教材的首页数据
+	 */
+	async getHomeData(childId) {
+		console.log('[FeishuRequest] 获取首页数据，childId:', childId)
+
+		this.getConfig()
+		
+		// 获取需要的表ID映射
+		const tables = {}
+		const tableList = feishuApi.getTableListSaved()
+		
+		const neededTables = ['任务表', '兑换记录表', '教材表']
+		tableList.forEach(table => {
+			if (neededTables.includes(table.name)) {
+				tables[table.name] = table.table_id
+			}
+		})
+		
+		await this.initCloudObject()
+		return this.feishutools.getHomeData({
+			baseToken: this.baseToken,
+			childId: childId,
+			tables: tables
+		})
+	}
+
+	/**
 	 * 构建过滤条件
 	 * @private
 	 */

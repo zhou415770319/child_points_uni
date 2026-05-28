@@ -50,6 +50,23 @@
 					<text class="modal-close" @click="closeModal">✕</text>
 				</view>
 				<view class="modal-body">
+					<view class="form-item" v-if="!editingTask">
+						<view class="template-switch">
+							<text class="form-label">使用模板</text>
+							<switch :checked="useTemplate" @change="onUseTemplateChange" />
+						</view>
+					</view>
+					<view class="form-item" v-if="useTemplate && !editingTask">
+						<text class="form-label">选择模板</text>
+						<CustomPicker 
+							:options="templateNames" 
+							v-model="templateIndex" 
+							:title="'选择任务模板'" 
+							:placeholder="'请选择模板'"
+							:auto-select-first="false"
+							@change="onTemplateChange"
+						/>
+					</view>
 					<view class="form-item">
 						<text class="form-label">任务标题</text>
 						<input class="form-input" v-model="formData.title" placeholder="请输入任务标题" />
@@ -83,6 +100,16 @@
 					<view class="form-item">
 						<text class="form-label">基础积分</text>
 						<input class="form-input" type="number" v-model="formData.base_points" placeholder="请输入基础积分" />
+					</view>
+					<view class="form-item">
+						<text class="form-label">奖励积分</text>
+						<input class="form-input" type="number" v-model="formData.reward_points" placeholder="请输入奖励积分（完成任务额外奖励）" />
+					</view>
+					<view class="form-item">
+						<view class="audit-switch">
+							<text class="form-label">需要审核</text>
+							<switch :checked="formData.need_audit" @change="onAuditChange" />
+						</view>
 					</view>
 					<view class="form-item">
 						<text class="form-label">关联儿童</text>
@@ -166,6 +193,8 @@
 					type_text: '',
 					difficulty: '',
 					base_points: '',
+					reward_points: '',
+					need_audit: false,
 					child_name: '',
 					child_id: ''
 				},
@@ -177,6 +206,11 @@
 				childIndex: -1,
 				childNames: [],
 				parentPhone: '',
+				// 模板相关
+				useTemplate: false,
+				templates: [],           // 任务模板列表
+				templateIndex: -1,
+				templateNames: [],       // 模板名称列表
 				// AI生成任务相关
 				showAIModal: false,
 				aiPrompt: '',
@@ -229,6 +263,8 @@
 					type_text: task.type_text,
 					difficulty: task.difficulty,
 					base_points: task.base_points.toString(),
+					reward_points: task.reward_points ? task.reward_points.toString() : '',
+					need_audit: task.need_audit || false,
 					child_name: task.child_name,
 					child_id: task.child_id
 				}
@@ -285,6 +321,9 @@
 				this.formData.child_name = option
 				this.formData.child_id = this.children[index]?.child_id || this.children[index]?.id || ''
 			},
+			onAuditChange(e) {
+				this.formData.need_audit = e.detail.value
+			},
 			closeModal() {
 				this.showAddModal = false
 				this.editingTask = null
@@ -295,12 +334,88 @@
 					type_text: '',
 					difficulty: '',
 					base_points: '',
+					reward_points: '',
+					need_audit: false,
 					child_name: '',
 					child_id: ''
 				}
 				this.typeIndex = -1
 				this.difficultyIndex = -1
 				this.childIndex = -1
+				this.useTemplate = false
+				this.templateIndex = -1
+			},
+			onUseTemplateChange(e) {
+				this.useTemplate = e.detail.value
+				if (this.useTemplate) {
+					this.loadTemplates()
+				} else {
+					this.templateIndex = -1
+				}
+			},
+			onTemplateChange(index, option) {
+				const template = this.templates[index]
+				if (template) {
+					this.formData.title = template.title || ''
+					this.formData.description = template.description || ''
+					this.formData.type = template.type || ''
+					this.formData.type_text = template.type_text || ''
+					this.formData.difficulty = template.difficulty || ''
+					this.formData.base_points = template.base_points ? template.base_points.toString() : ''
+					
+					if (template.type_text) {
+						this.typeIndex = this.taskTypes.indexOf(template.type_text)
+						if (this.typeIndex === -1) {
+							this.typeIndex = this.taskTypes.indexOf(template.type)
+						}
+					}
+					
+					if (template.difficulty) {
+						const difficultyText = this.getDifficultyText(template.difficulty)
+						this.difficultyIndex = this.difficulties.indexOf(difficultyText)
+						if (this.difficultyIndex === -1) {
+							this.difficultyIndex = this.difficulties.indexOf(template.difficulty)
+						}
+					}
+				}
+			},
+			async loadTemplates() {
+				try {
+					const result = await feishuRequest.queryRecords('任务模板表')
+					if (result.success && result.data && result.data.length > 0) {
+						this.templates = result.data.map(item => {
+							const title = item.fields.title 
+								? (Array.isArray(item.fields.title) && item.fields.title[0] && item.fields.title[0].text 
+									? item.fields.title[0].text 
+									: item.fields.title)
+								: ''
+							
+							const description = item.fields.description 
+								? (Array.isArray(item.fields.description) && item.fields.description[0] && item.fields.description[0].text 
+									? item.fields.description[0].text 
+									: item.fields.description)
+								: ''
+							
+							return {
+								id: item.record_id,
+								title: title,
+								description: description,
+								type: item.fields.type || '',
+								type_text: item.fields.type_text || '',
+								difficulty: item.fields.difficulty || '',
+								base_points: item.fields.base_points || 0
+							}
+						})
+						this.templateNames = this.templates.map(t => t.title || '未命名模板')
+					} else {
+						this.templates = []
+						this.templateNames = []
+					}
+				} catch (error) {
+					console.error('[Tasks] 加载模板列表失败:', error)
+					this.templates = []
+					this.templateNames = []
+				}
 			},
 			async saveTask() {
 				if (!this.formData.title || !this.formData.type || !this.formData.difficulty || !this.formData.base_points || !this.formData.child_id) {
@@ -316,6 +431,8 @@
 					type: this.formData.type,
 					difficulty: this.formData.difficulty,
 					base_points: parseInt(this.formData.base_points),
+					reward_points: this.formData.reward_points ? parseInt(this.formData.reward_points) : 0,
+					need_audit: this.formData.need_audit || false,
 					child_id: this.formData.child_id,
 					status: '未开始'
 				}
@@ -440,8 +557,33 @@
 			},
 			getChildName(childId) {
 				if (!childId) return '未关联'
-				const child = this.children.find(c => c.child_id === childId || c.id === childId)
+				// 处理多种格式的childId
+				const childIdStr = this.normalizeChildId(childId)
+				const child = this.children.find(c => {
+					const childKey = c.child_id || c.id || c.record_id
+					const childKeyStr = this.normalizeChildId(childKey)
+					return childKeyStr === childIdStr || 
+						   childKeyStr.includes(childIdStr) || 
+						   childIdStr.includes(childKeyStr)
+				})
 				return child ? child.name : '未知儿童'
+			},
+			normalizeChildId(id) {
+				if (!id) return ''
+				if (typeof id === 'string') return id.trim()
+				if (Array.isArray(id)) {
+					if (id[0] && id[0].text !== undefined) return id[0].text.trim()
+					if (id[0] && typeof id[0] === 'string') return id[0].trim()
+					return JSON.stringify(id)
+				}
+				if (typeof id === 'object') {
+					if (id.value && Array.isArray(id.value) && id.value[0] && id.value[0].text) {
+						return id.value[0].text.trim()
+					}
+					if (id.text) return String(id.text).trim()
+					return JSON.stringify(id)
+				}
+				return String(id).trim()
 			},
 			setFilter(filter) {
 				this.currentFilter = filter
@@ -465,10 +607,8 @@
 									: item.fields.description)
 								: ''
 							
-							let childId = item.fields.child_id || item.fields.childId || ''
-							if (Array.isArray(childId) && childId[0]) {
-								childId = childId[0].text !== undefined ? childId[0].text : childId[0]
-							}
+							// 使用 normalizeChildId 统一处理 child_id
+							const childId = this.normalizeChildId(item.fields.child_id || item.fields.childId || '')
 							
 							return {
 								id: item.record_id,
@@ -502,6 +642,8 @@
 						type: taskData.type,
 						difficulty: taskData.difficulty,
 						base_points: taskData.base_points,
+						reward_points: taskData.reward_points || 0,
+						need_audit: taskData.need_audit || false,
 						child_id: taskData.child_id,
 						status: taskData.status || '进行中'
 					}
@@ -524,6 +666,8 @@
 						type_text: taskData.type_text,
 						difficulty: taskData.difficulty,
 						base_points: taskData.base_points,
+						reward_points: taskData.reward_points || 0,
+						need_audit: taskData.need_audit || false,
 						child_id: taskData.child_id,
 						child_name: taskData.child_name
 					}
@@ -847,6 +991,13 @@
 		border-radius: 10rpx;
 		font-size: 28rpx;
 		box-sizing: border-box;
+	}
+
+	.template-switch, .audit-switch {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 10rpx 0;
 	}
 
 	.form-picker {

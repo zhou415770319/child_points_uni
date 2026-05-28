@@ -20,10 +20,30 @@
 				<text class="menu-title">儿童管理</text>
 				<text class="menu-desc">管理儿童账号</text>
 			</view>
+			<view class="menu-item" @click="navigateTo('/pages/parent/points')">
+				<view class="menu-icon">💰</view>
+				<text class="menu-title">积分管理</text>
+				<text class="menu-desc">管理积分记录</text>
+			</view>
 			<view class="menu-item" @click="showAIGenerate">
 				<view class="menu-icon">🤖</view>
 				<text class="menu-title">AI生成</text>
 				<text class="menu-desc">智能生成任务</text>
+			</view>
+			<view class="menu-item" @click="navigateTo('/pages/parent/learning-schedule')">
+				<view class="menu-icon">⏰</view>
+				<text class="menu-title">学习时间</text>
+				<text class="menu-desc">设置学习时间段</text>
+			</view>
+			<view class="menu-item" @click="showCozeConfig">
+				<view class="menu-icon">⚙️</view>
+				<text class="menu-title">AI配置</text>
+				<text class="menu-desc">配置Coze工作流</text>
+			</view>
+			<view class="menu-item" @click="navigateTo('/pages/parent/goods-manage')">
+				<view class="menu-icon">🛒</view>
+				<text class="menu-title">商城管理</text>
+				<text class="menu-desc">管理商品信息</text>
 			</view>
 		</view>
 
@@ -94,12 +114,41 @@
 			</view>
 		</view>
 
+		<view class="modal-overlay" v-if="showCozeModal" @click="closeCozeModal">
+			<view class="modal-content" @click.stop>
+				<view class="modal-header">
+					<text class="modal-title">⚙️ Coze配置</text>
+					<text class="modal-close" @click="closeCozeModal">✕</text>
+				</view>
+				<view class="modal-body">
+					<view class="form-item">
+						<text class="form-label">工作流地址</text>
+						<input class="form-input" v-model="cozeConfig.workflowUrl" placeholder="Coze工作流URL" />
+					</view>
+					<view class="form-item">
+						<text class="form-label">API密钥</text>
+						<input class="form-input" v-model="cozeConfig.apiKey" placeholder="Coze API Key" />
+					</view>
+					<view class="config-tip">
+						<text class="tip-icon">💡</text>
+						<text class="tip-text">配置后，AI生成任务功能将调用Coze工作流生成任务</text>
+					</view>
+				</view>
+				<view class="modal-footer">
+					<button class="btn btn-secondary" @click="closeCozeModal">取消</button>
+					<button class="btn btn-primary" @click="saveCozeConfig">保存</button>
+				</view>
+			</view>
+		</view>
+
 		<custom-tab-bar ref="tabBar"></custom-tab-bar>
 	</view>
 </template>
 
 <script>
 	import customTabBar from '@/custom-tab-bar/index.vue'
+	import { cozeRequest } from '@/common/coze-request.js'
+	import { feishuRequest } from '@/common/feishu-request.js'
 	export default {
 		components: { customTabBar },
 		data() {
@@ -109,7 +158,12 @@
 				taskCounts: [3, 5, 7, 10],
 				taskCountIndex: 1,
 				difficulties: ['简单', '中等', '困难'],
-				difficultyIndex: 1
+				difficultyIndex: 1,
+				showCozeModal: false,
+				cozeConfig: {
+					workflowUrl: '',
+					apiKey: ''
+				}
 			}
 		},
 		onShow() {
@@ -130,13 +184,44 @@
 				this.taskCountIndex = 1
 				this.difficultyIndex = 1
 			},
+			showCozeConfig() {
+				const config = cozeRequest.getConfig()
+				if (config) {
+					this.cozeConfig = {
+						workflowUrl: config.workflowUrl || '',
+						apiKey: config.apiKey || ''
+					}
+				}
+				this.showCozeModal = true
+			},
+			closeCozeModal() {
+				this.showCozeModal = false
+			},
+			saveCozeConfig() {
+				if (!this.cozeConfig.workflowUrl.trim()) {
+					uni.showToast({ title: '请输入工作流地址', icon: 'none' })
+					return
+				}
+				if (!this.cozeConfig.apiKey.trim()) {
+					uni.showToast({ title: '请输入API密钥', icon: 'none' })
+					return
+				}
+
+				cozeRequest.saveConfig({
+					workflowUrl: this.cozeConfig.workflowUrl.trim(),
+					apiKey: this.cozeConfig.apiKey.trim()
+				})
+
+				uni.showToast({ title: '配置保存成功', icon: 'success' })
+				this.closeCozeModal()
+			},
 			onTaskCountChange(e) {
 				this.taskCountIndex = e.detail.value
 			},
 			onDifficultyChange(e) {
 				this.difficultyIndex = e.detail.value
 			},
-			generateTasks() {
+			async generateTasks() {
 				if (!this.aiPrompt.trim()) {
 					uni.showToast({ title: '请输入生成主题', icon: 'none' })
 					return
@@ -144,12 +229,63 @@
 
 				uni.showLoading({ title: 'AI生成中...' })
 
-				setTimeout(() => {
+				try {
+					const params = cozeRequest.buildTaskParams(
+						this.aiPrompt,
+						this.taskCounts[this.taskCountIndex],
+						this.difficulties[this.difficultyIndex]
+					)
+
+					const cozeResult = await cozeRequest.generateTasks(params)
+
+					if (!cozeResult.success) {
+						uni.hideLoading()
+						uni.showToast({ title: cozeResult.message, icon: 'none' })
+						return
+					}
+
+					const tasksData = cozeResult.data
+					console.log('[AI生成] Coze返回的任务数据:', tasksData)
+
+					if (!tasksData || !Array.isArray(tasksData.tasks)) {
+						uni.hideLoading()
+						uni.showToast({ title: '工作流返回数据格式不正确', icon: 'none' })
+						return
+					}
+
+					const tasks = tasksData.tasks.map(task => ({
+						title: task.title || task.name || '未命名任务',
+						description: task.description || '',
+						type: task.type || 'study',
+						type_text: task.type_text || '学习',
+						difficulty: task.difficulty || '中等',
+						base_points: task.base_points || task.points || 10,
+						status: '未开始',
+						created_at: Date.now()
+					}))
+
+					if (tasks.length === 0) {
+						uni.hideLoading()
+						uni.showToast({ title: '未生成任何任务', icon: 'none' })
+						return
+					}
+
+					const batchResult = await feishuRequest.batchAddRecords('任务表', tasks)
+
+					if (batchResult.success) {
+						uni.hideLoading()
+						uni.showToast({ title: `成功生成 ${tasks.length} 个任务！`, icon: 'success' })
+						this.closeAIModal()
+						uni.navigateTo({ url: '/pages/parent/tasks' })
+					} else {
+						uni.hideLoading()
+						uni.showToast({ title: '保存任务失败', icon: 'none' })
+					}
+				} catch (error) {
+					console.error('[AI生成] 生成任务异常:', error)
 					uni.hideLoading()
-					uni.showToast({ title: '生成成功！', icon: 'success' })
-					this.closeAIModal()
-					uni.switchTab({ url: '/pages/parent/tasks' })
-				}, 2000)
+					uni.showToast({ title: '生成任务时发生异常', icon: 'none' })
+				}
 			},
 			batchCreateTasks() {
 				uni.navigateTo({ url: '/pages/parent/task-templates' })
@@ -362,6 +498,16 @@
 	.picker-arrow {
 		font-size: 32rpx;
 		color: #999;
+	}
+
+	.config-tip {
+		display: flex;
+		align-items: flex-start;
+		gap: 10rpx;
+		padding: 20rpx;
+		background-color: #e8f5e9;
+		border-radius: 12rpx;
+		margin-top: 10rpx;
 	}
 
 	.modal-footer {

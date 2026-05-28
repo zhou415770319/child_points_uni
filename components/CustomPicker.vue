@@ -19,7 +19,7 @@
 						:class="{ 'picker-item-active': currentIndex === index }"
 						@click="selectOption(index)"
 					>
-						{{ typeof option === 'object' ? option.label : option }}
+						{{ typeof option === 'object' ? option[this.labelField] : option }}
 						<text v-if="currentIndex === index" class="picker-check">✓</text>
 					</view>
 				</view>
@@ -56,6 +56,16 @@ export default {
 		autoSelectFirst: {
 			type: Boolean,
 			default: true
+		},
+		// 显示文本的字段名（支持 label, name, text 等）
+		labelField: {
+			type: String,
+			default: 'label'
+		},
+		// 值字段名（支持 value, id 等）
+		valueField: {
+			type: String,
+			default: 'value'
 		}
 	},
 	data() {
@@ -68,7 +78,7 @@ export default {
 		currentValue() {
 			if (this.currentIndex >= 0 && this.currentIndex < this.options.length) {
 				const option = this.options[this.currentIndex]
-				return typeof option === 'object' ? option.label : option
+				return typeof option === 'object' ? option[this.labelField] : option
 			}
 			return ''
 		}
