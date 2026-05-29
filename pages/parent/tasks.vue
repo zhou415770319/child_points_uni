@@ -29,6 +29,8 @@
 						<view class="task-meta">
 							<text class="meta-item">👧 {{ task.child_name }}</text>
 							<text class="meta-item">⭐ {{ task.base_points }}积分</text>
+							<text v-if="task.reward_points && (!task.need_audit || task.audit_status === 'approved')" class="meta-item reward">🎁 +{{ task.reward_points }}</text>
+							<text v-if="task.reward_points && task.need_audit && task.audit_status !== 'approved'" class="meta-item audit-pending">🎁 待审核</text>
 							<text class="meta-item">{{ task.type_text }}</text>
 						</view>
 						<view class="task-footer">
@@ -268,19 +270,32 @@
 					child_name: task.child_name,
 					child_id: task.child_id
 				}
-				// 任务类型回显：优先使用type_text，找不到则使用type
-				const typeIdx = this.taskTypes.indexOf(task.type_text)
-				this.typeIndex = typeIdx >= 0 ? typeIdx : (this.taskTypes.indexOf(task.type) >= 0 ? this.taskTypes.indexOf(task.type) : -1)
-				// 难度回显：从分类表获取的难度值是中文，直接匹配
-				// task.difficulty 可能是英文标识（easy/medium/hard）或中文（简单/中等/困难）
-				const difficultyText = this.getDifficultyText(task.difficulty)
-				this.difficultyIndex = this.difficulties.indexOf(difficultyText)
-				if (this.difficultyIndex === -1) {
-					// 如果找不到，尝试直接匹配原始值
-					this.difficultyIndex = this.difficulties.indexOf(task.difficulty)
+				// 任务类型回显：先匹配type_text，再匹配type，都找不到则设为-1
+				let typeIdx = this.taskTypes.indexOf(task.type_text)
+				if (typeIdx === -1) {
+					typeIdx = this.taskTypes.indexOf(task.type)
 				}
-				// 关联儿童回显：根据child_id匹配儿童索引
-				this.childIndex = this.children.findIndex(c => c.child_id === task.child_id || c.id === task.child_id)
+				this.typeIndex = typeIdx
+				console.log('[Tasks] 编辑任务类型回显:', task.type_text, task.type, typeIdx, this.taskTypes)
+				
+				// 难度回显：先将英文转换为中文，再匹配
+				const difficultyText = this.getDifficultyText(task.difficulty)
+				let difficultyIdx = this.difficulties.indexOf(difficultyText)
+				if (difficultyIdx === -1) {
+					difficultyIdx = this.difficulties.indexOf(task.difficulty)
+				}
+				this.difficultyIndex = difficultyIdx
+				console.log('[Tasks] 编辑任务难度回显:', task.difficulty, difficultyText, difficultyIdx, this.difficulties)
+				
+				// 关联儿童回显：根据child_id匹配儿童索引，支持多种id格式
+				const normalizedChildId = this.normalizeChildId(task.child_id)
+				this.childIndex = this.children.findIndex(c => {
+					const childKey = this.normalizeChildId(c.child_id || c.id || c.record_id)
+					return childKey === normalizedChildId || 
+						   childKey.includes(normalizedChildId) || 
+						   normalizedChildId.includes(childKey)
+				})
+				console.log('[Tasks] 编辑任务儿童回显:', task.child_id, normalizedChildId, this.childIndex)
 				this.showAddModal = true
 			},
 			deleteTask(task) {
@@ -610,6 +625,11 @@
 							// 使用 normalizeChildId 统一处理 child_id
 							const childId = this.normalizeChildId(item.fields.child_id || item.fields.childId || '')
 							
+							// 获取奖励积分和审核相关字段
+							const reward_points = item.fields.reward_points || 0
+							const need_audit = item.fields.need_audit || false
+							const audit_status = item.fields.audit_status || 'pending'
+							
 							return {
 								id: item.record_id,
 								title: title,
@@ -618,6 +638,9 @@
 								type_text: item.fields.type_text || '',
 								difficulty: item.fields.difficulty || '简单',
 								base_points: item.fields.base_points || 0,
+								reward_points: reward_points,
+								need_audit: need_audit,
+								audit_status: audit_status,
 								child_id: childId,
 								child_name: this.getChildName(childId),
 								status: item.fields.status || '未开始',
@@ -866,6 +889,16 @@
 	.meta-item {
 		font-size: 22rpx;
 		color: #666;
+
+		&.reward {
+			color: #ff9500;
+			font-weight: bold;
+		}
+
+		&.audit-pending {
+			color: #999;
+			font-style: italic;
+		}
 	}
 
 	.task-footer {

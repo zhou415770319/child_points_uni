@@ -310,9 +310,10 @@
 					name: this.formData.name,
 					description: this.formData.description,
 					category: this.formData.category,
-					price: parseInt(this.formData.points),
-					stock: parseInt(this.formData.stock),
-					status: this.formData.status
+					price: parseInt(this.formData.price) || 0,
+					points: parseInt(this.formData.points) || 0,
+					stock: parseInt(this.formData.stock) || 0,
+					status: this.formData.status || '开启'
 				}
 
 				try {
@@ -351,29 +352,28 @@
 				try {
 					const categoryCacheKey = 'gift_category'
 					const statusCacheKey = 'gift_status'
-					let cachedCategories = CacheManager.getCache('categories')[categoryCacheKey]
-					let cachedStatuses = CacheManager.getCache('categories')[statusCacheKey]
-                    console.log('[Goods] 使用loadCategories',cachedCategories,cachedStatuses)
+					
+					let cachedCategories = CacheManager.getCache(categoryCacheKey)
+					let cachedStatuses = CacheManager.getCache(statusCacheKey)
+					
+					console.log('[Goods] 缓存数据:', cachedCategories, cachedStatuses)
 
-					// 处理分类数据
 					if (cachedCategories && Array.isArray(cachedCategories)) {
-                        this.categories = cachedCategories.map(item => ({
-                            id: item.value,
+						this.categories = cachedCategories.map(item => ({
+							id: item.value,
 							name: item.label
 						}))
-                        console.log('[Goods] 使用缓存的礼品分类数据',this.categories)
+						console.log('[Goods] 使用缓存的礼品分类数据:', this.categories)
 					}
 					
-					// 处理状态数据
 					if (cachedStatuses && Array.isArray(cachedStatuses)) {
-                        this.giftStatuses = cachedStatuses.map(item => ({
-                            id: item.value,
+						this.giftStatuses = cachedStatuses.map(item => ({
+							id: item.value,
 							name: item.label
 						}))
-                        console.log('[Goods] 使用缓存的状态数据',this.giftStatuses)
+						console.log('[Goods] 使用缓存的状态数据:', this.giftStatuses)
 					}
 					
-					// 如果缓存没有数据，从飞书多维表格获取
 					if (!this.categories.length || !this.giftStatuses.length) {
 						console.log('[Goods] 从飞书多维表格加载分类和状态数据')
 						const result = await feishuRequest.queryRecords('分类表')
@@ -381,30 +381,20 @@
 						if (result.success && result.data && result.data.length > 0) {
 							const item = result.data[0]
 							
-							// 处理分类
-							if (!this.categories.length) {
-								const giftCategoryField = item.fields.gift_category
-								if (giftCategoryField && Array.isArray(giftCategoryField)) {
-									this.categories = giftCategoryField.map(cat => ({
-										id: cat.value,
-										name: cat.label
-									}))
-									// 保存原始格式到缓存
-									CacheManager.setCache(categoryCacheKey, giftCategoryField)
-								}
+							if (!this.categories.length && item.fields.gift_category && Array.isArray(item.fields.gift_category)) {
+								this.categories = item.fields.gift_category.map(cat => ({
+									id: cat.value,
+									name: cat.label
+								}))
+								CacheManager.setCache(categoryCacheKey, item.fields.gift_category)
 							}
 							
-							// 处理状态
-							if (!this.giftStatuses.length) {
-								const bookStatusField = item.fields.book_status
-								if (bookStatusField && Array.isArray(bookStatusField)) {
-									this.giftStatuses = bookStatusField.map(status => ({
-										id: status.value,
-										name: status.label
-									}))
-									// 保存原始格式到缓存
-									CacheManager.setCache(statusCacheKey, bookStatusField)
-								}
+							if (!this.giftStatuses.length && item.fields.book_status && Array.isArray(item.fields.book_status)) {
+								this.giftStatuses = item.fields.book_status.map(status => ({
+									id: status.value,
+									name: status.label
+								}))
+								CacheManager.setCache(statusCacheKey, item.fields.book_status)
 							}
 						}
 					}

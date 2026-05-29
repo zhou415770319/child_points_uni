@@ -555,6 +555,88 @@ async function getImageUrls(params) {
 }
 
 /**
+ * 上传文件到飞书云文档
+ * @param {Object} params
+ * @param {string} params.baseToken - 多维表格Token
+ * @param {string} params.fileName - 文件名
+ * @param {string} params.fileContentBase64 - base64编码的文件内容
+ * @returns {Promise<Object>} 上传结果，包含 fileToken
+ */
+async function uploadFile(params) {
+	console.log('[FeishuTools] 上传文件:', JSON.stringify(params))
+	
+	const { baseToken, fileName, fileContentBase64 } = params
+	
+	if (!baseToken || !fileName || !fileContentBase64) {
+		throw new Error('baseToken、fileName和fileContentBase64不能为空')
+	}
+	
+	const tokenResult = await getAccessToken()
+	
+	const fileContent = Buffer.from(fileContentBase64, 'base64')
+	
+	const url = `https://open.feishu.cn/open-apis/drive/v1/medias/upload_all?file_name=${encodeURIComponent(fileName)}&parent_type=bitable_image&parent_node=${baseToken}`
+	
+	console.log('[FeishuTools] 请求URL:', url)
+	
+	return new Promise((resolve, reject) => {
+		const https = require('https')
+		const urlObj = new URL(url)
+		
+		const boundary = '---7MA4YWxkTrZu0gW'
+		const boundaryStart = Buffer.from('--' + boundary + '\r\n', 'utf8')
+		const contentDisposition = Buffer.from('Content-Disposition: form-data; name="file"; filename="' + fileName + '"\r\n', 'utf8')
+		const contentType = Buffer.from('Content-Type: application/octet-stream\r\n\r\n', 'utf8')
+		const boundaryEnd = Buffer.from('\r\n--' + boundary + '--\r\n', 'utf8')
+		
+		const body = Buffer.concat([boundaryStart, contentDisposition, contentType, fileContent, boundaryEnd])
+		
+		const options = {
+			hostname: urlObj.hostname,
+			port: 443,
+			path: urlObj.pathname + urlObj.search,
+			method: 'POST',
+			headers: {
+				'Authorization': 'Bearer ' + tokenResult.accessToken,
+				'Content-Type': 'multipart/form-data; boundary=' + boundary,
+				'Content-Length': body.length
+			}
+		}
+		
+		const req = https.request(options, (res) => {
+			let data = ''
+			res.on('data', (chunk) => {
+				data += chunk
+			})
+			res.on('end', () => {
+				console.log('[FeishuTools] 上传响应:', data)
+				try {
+					const response = JSON.parse(data)
+					if (response.code === 0) {
+						resolve({
+							success: true,
+							fileToken: response.data.file_token
+						})
+					} else {
+						reject(new Error('上传失败: ' + JSON.stringify(response)))
+					}
+				} catch (e) {
+					reject(new Error('解析响应失败: ' + data))
+				}
+			})
+		})
+		
+		req.on('error', (e) => {
+			console.error('[FeishuTools] 请求错误:', e)
+			reject(new Error('请求失败: ' + e.message))
+		})
+		
+		req.write(body)
+		req.end()
+	})
+}
+
+/**
  * 批量获取首页数据（减少云函数调用次数）
  * @param {Object} params
  * @param {string} params.baseToken - 多维表格Token
@@ -683,5 +765,6 @@ module.exports = {
 	deleteRecord,
 	batchAddRecords,
 	getImageUrls,
-	getHomeData
+	getHomeData,
+	uploadFile
 }

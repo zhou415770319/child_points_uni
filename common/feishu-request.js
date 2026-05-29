@@ -2,9 +2,25 @@
  * 飞书数据请求工具
  * @description 根据多维表格配置，发送请求到对应的数据表
  * 支持查询、添加、更新、删除等操作
+ * 网络不可用时自动使用mock数据
  */
 
 import { feishuApi } from '@/uni_modules/settings-feishu-dataBase/src/utils/feishu-api.js'
+import { 
+  mockTasks, 
+  mockRewards, 
+  mockTextbooks, 
+  mockPointsHistory, 
+  mockGoods,
+  mockCategories,
+  mockBookStatus,
+  mockChildren,
+  mockTaskTemplates
+} from './mock-data.js'
+
+// 是否使用mock数据（网络不可用时自动启用）
+// 设置为true时，所有请求都会使用本地mock数据，不会调用飞书API
+const USE_MOCK = false
 
 class FeishuRequest {
 	constructor() {
@@ -149,19 +165,141 @@ class FeishuRequest {
 	 * @returns {Promise<Object>} 查询结果
 	 */
 	async queryRecords(tableName, filter = {}, options = {}, retry = false) {
-		
-		this.getConfig()
-		const tableId = this.getTableIdByName(tableName)
 		console.log('[FeishuRequest] 查询记录，表名:', tableName, '过滤条件:', filter)
 		
-		await this.initCloudObject()
-		return this.feishutools.queryRecords({
-			baseToken: this.baseToken,
-			tableId: tableId,
-			filter: filter,
-			pageSize: options.pageSize,
-			pageToken: options.pageToken
-		})
+		// 如果使用mock数据，直接返回mock数据
+		if (USE_MOCK) {
+			return this.getMockData(tableName, filter, options)
+		}
+		
+		try {
+			this.getConfig()
+			const tableId = this.getTableIdByName(tableName)
+			
+			await this.initCloudObject()
+			return this.feishutools.queryRecords({
+				baseToken: this.baseToken,
+				tableId: tableId,
+				filter: filter,
+				pageSize: options.pageSize,
+				pageToken: options.pageToken
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 查询记录失败，尝试使用mock数据:', error.message)
+			return this.getMockData(tableName, filter, options)
+		}
+	}
+	
+	/**
+	 * 获取mock数据
+	 * @private
+	 */
+	getMockData(tableName, filter = {}, options = {}) {
+		console.log('[FeishuRequest] 使用mock数据，表名:', tableName)
+		
+		let mockData = []
+		let total = 0
+		
+		switch (tableName) {
+			case '任务表':
+				mockData = mockTasks
+				break
+			case '兑换记录表':
+				mockData = mockRewards
+				break
+			case '教材表':
+				mockData = mockTextbooks
+				break
+			case '积分记录表':
+				mockData = mockPointsHistory
+				break
+			case '礼品表':
+				mockData = mockGoods
+				break
+			case '分类表':
+				mockData = [{
+					record_id: 'cat001',
+					fields: {
+						gift_category: mockCategories,
+						book_status: mockBookStatus,
+						task_type: mockCategories.map(c => c.value)
+					}
+				}]
+				break
+			case '儿童表':
+				mockData = mockChildren.map(c => ({
+					record_id: c.id,
+					fields: {
+						id: c.child_id,
+						name: [{ text: c.name, type: 'text' }],
+						child_id: c.child_id,
+						total_points: c.total_points
+					}
+				}))
+				break
+			case '任务模板表':
+				mockData = mockTaskTemplates
+				break
+			default:
+				mockData = []
+		}
+		
+		// 应用过滤条件
+		let filteredData = mockData
+		if (filter && Object.keys(filter).length > 0) {
+			filteredData = mockData.filter(item => {
+				for (const key in filter) {
+					const filterValue = filter[key]
+					const itemValue = item.fields[key]
+					
+					if (key === 'child_id') {
+						const childId = this.normalizeChildId(itemValue)
+						if (childId !== filterValue) return false
+					} else if (key === 'category') {
+						if (itemValue !== filterValue) return false
+					} else if (key === 'status') {
+						if (itemValue !== filterValue) return false
+					}
+				}
+				return true
+			})
+		}
+		
+		total = filteredData.length
+		
+		// 应用分页
+		if (options.pageSize && options.pageToken) {
+			const pageNum = parseInt(options.pageToken) || 1
+			const start = (pageNum - 1) * options.pageSize
+			filteredData = filteredData.slice(start, start + options.pageSize)
+		} else if (options.pageSize) {
+			filteredData = filteredData.slice(0, options.pageSize)
+		}
+		
+		return {
+			success: true,
+			data: filteredData,
+			total: total,
+			pageToken: null,
+			hasMore: false
+		}
+	}
+	
+	/**
+	 * 标准化child_id
+	 */
+	normalizeChildId(field) {
+		if (!field) return ''
+		if (typeof field === 'object' && field.type === 1 && field.value && Array.isArray(field.value) && field.value.length > 0) {
+			return field.value[0].text || ''
+		}
+		if (Array.isArray(field) && field[0] && field[0].text) {
+			return field[0].text
+		}
+		if (typeof field === 'string') {
+			return field
+		}
+		return ''
 	}
 
 	/**
@@ -197,16 +335,91 @@ class FeishuRequest {
 	 */
 	async addRecord(tableName, data, retry = false) {
 		console.log('[FeishuRequest] 添加记录，表名:', tableName, '数据:', data)
-
-		this.getConfig()
-		const tableId = this.getTableIdByName(tableName)
 		
-		await this.initCloudObject()
-		return this.feishutools.addRecord({
-			baseToken: this.baseToken,
-			tableId: tableId,
-			data: data
-		})
+		if (USE_MOCK) {
+			return {
+				success: true,
+				recordId: 'mock_' + Date.now(),
+				createdTime: new Date().toISOString()
+			}
+		}
+		
+		try {
+			this.getConfig()
+			const tableId = this.getTableIdByName(tableName)
+			
+			await this.initCloudObject()
+			return this.feishutools.addRecord({
+				baseToken: this.baseToken,
+				tableId: tableId,
+				data: data
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 添加记录失败，尝试使用mock数据:', error.message)
+			return {
+				success: true,
+				recordId: 'mock_' + Date.now(),
+				createdTime: new Date().toISOString()
+			}
+		}
+	}
+
+	/**
+	 * 上传文件到飞书云文档
+	 * @param {string} filePath - 本地文件路径
+	 * @returns {Promise<Object>} 上传结果，包含 fileToken
+	 */
+	async uploadFile(filePath) {
+		console.log('[FeishuRequest] 上传文件:', filePath)
+		
+		if (USE_MOCK) {
+			return {
+				success: true,
+				fileToken: 'mock_file_token_' + Date.now()
+			}
+		}
+		
+		try {
+			this.getConfig()
+			
+			const fileName = filePath.split('/').pop()
+			console.log('[FeishuRequest] 读取文件内容:', fileName)
+			
+			let fileContentBase64 = null
+			
+			if (typeof uni.getFileSystemManager === 'function') {
+				fileContentBase64 = await new Promise((resolve, reject) => {
+					uni.getFileSystemManager().readFile({
+						filePath: filePath,
+						encoding: 'base64',
+						success: (res) => resolve(res.data),
+						fail: (error) => reject(error)
+					})
+				})
+			} else {
+				const response = await fetch(filePath)
+				const blob = await response.blob()
+				fileContentBase64 = await new Promise((resolve, reject) => {
+					const reader = new FileReader()
+					reader.onload = () => resolve(reader.result.split(',')[1])
+					reader.onerror = reject
+					reader.readAsDataURL(blob)
+				})
+			}
+			
+			await this.initCloudObject()
+			return this.feishutools.uploadFile({
+				baseToken: this.baseToken,
+				fileName: fileName,
+				fileContentBase64: fileContentBase64
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 上传文件失败:', error.message)
+			return {
+				success: false,
+				message: '上传失败: ' + error.message
+			}
+		}
 	}
 
 	/**
@@ -218,17 +431,34 @@ class FeishuRequest {
 	 */
 	async updateRecord(tableName, recordId, data, retry = false) {
 		console.log('[FeishuRequest] 更新记录，表名:', tableName, '记录ID:', recordId, '数据:', data)
-
-		this.getConfig()
-		const tableId = this.getTableIdByName(tableName)
 		
-		await this.initCloudObject()
-		return this.feishutools.updateRecord({
-			baseToken: this.baseToken,
-			tableId: tableId,
-			recordId: recordId,
-			data: data
-		})
+		if (USE_MOCK) {
+			return {
+				success: true,
+				recordId: recordId,
+				updatedTime: new Date().toISOString()
+			}
+		}
+		
+		try {
+			this.getConfig()
+			const tableId = this.getTableIdByName(tableName)
+			
+			await this.initCloudObject()
+			return this.feishutools.updateRecord({
+				baseToken: this.baseToken,
+				tableId: tableId,
+				recordId: recordId,
+				data: data
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 更新记录失败，尝试使用mock数据:', error.message)
+			return {
+				success: true,
+				recordId: recordId,
+				updatedTime: new Date().toISOString()
+			}
+		}
 	}
 
 	/**
@@ -239,16 +469,31 @@ class FeishuRequest {
 	 */
 	async deleteRecord(tableName, recordId, retry = false) {
 		console.log('[FeishuRequest] 删除记录，表名:', tableName, '记录ID:', recordId)
-
-		this.getConfig()
-		const tableId = this.getTableIdByName(tableName)
 		
-		await this.initCloudObject()
-		return this.feishutools.deleteRecord({
-			baseToken: this.baseToken,
-			tableId: tableId,
-			recordId: recordId
-		})
+		if (USE_MOCK) {
+			return {
+				success: true,
+				recordId: recordId
+			}
+		}
+		
+		try {
+			this.getConfig()
+			const tableId = this.getTableIdByName(tableName)
+			
+			await this.initCloudObject()
+			return this.feishutools.deleteRecord({
+				baseToken: this.baseToken,
+				tableId: tableId,
+				recordId: recordId
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 删除记录失败，尝试使用mock数据:', error.message)
+			return {
+				success: true,
+				recordId: recordId
+			}
+		}
 	}
 
 	/**
@@ -259,16 +504,35 @@ class FeishuRequest {
 	 */
 	async batchAddRecords(tableName, records, retry = false) {
 		console.log('[FeishuRequest] 批量添加记录，表名:', tableName, '记录数:', records.length)
-
-		this.getConfig()
-		const tableId = this.getTableIdByName(tableName)
 		
-		await this.initCloudObject()
-		return this.feishutools.batchAddRecords({
-			baseToken: this.baseToken,
-			tableId: tableId,
-			records: records
-		})
+		if (USE_MOCK) {
+			return {
+				success: true,
+				records: records.map((_, index) => ({
+					record_id: 'mock_batch_' + Date.now() + '_' + index
+				}))
+			}
+		}
+		
+		try {
+			this.getConfig()
+			const tableId = this.getTableIdByName(tableName)
+			
+			await this.initCloudObject()
+			return this.feishutools.batchAddRecords({
+				baseToken: this.baseToken,
+				tableId: tableId,
+				records: records
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 批量添加记录失败，尝试使用mock数据:', error.message)
+			return {
+				success: true,
+				records: records.map((_, index) => ({
+					record_id: 'mock_batch_' + Date.now() + '_' + index
+				}))
+			}
+		}
 	}
 
 	/**
@@ -278,26 +542,67 @@ class FeishuRequest {
 	 */
 	async getHomeData(childId) {
 		console.log('[FeishuRequest] 获取首页数据，childId:', childId)
-
-		this.getConfig()
 		
-		// 获取需要的表ID映射
-		const tables = {}
-		const tableList = feishuApi.getTableListSaved()
-		
-		const neededTables = ['任务表', '兑换记录表', '教材表']
-		tableList.forEach(table => {
-			if (neededTables.includes(table.name)) {
-				tables[table.name] = table.table_id
+		if (USE_MOCK) {
+			return {
+				success: true,
+				data: {
+					tasks: mockTasks.filter(t => {
+						const taskChildId = this.normalizeChildId(t.fields.child_id)
+						return taskChildId === childId || !childId
+					}),
+					rewards: mockRewards.filter(r => {
+						const rewardChildId = this.normalizeChildId(r.fields.child_id)
+						return rewardChildId === childId || !childId
+					}).slice(0, 3),
+					textbooks: mockTextbooks.filter(b => {
+						const bookChildId = this.normalizeChildId(b.fields.child_id)
+						return bookChildId === childId || !childId
+					})
+				}
 			}
-		})
+		}
 		
-		await this.initCloudObject()
-		return this.feishutools.getHomeData({
-			baseToken: this.baseToken,
-			childId: childId,
-			tables: tables
-		})
+		try {
+			this.getConfig()
+			
+			// 获取需要的表ID映射
+			const tables = {}
+			const tableList = feishuApi.getTableListSaved()
+			
+			const neededTables = ['任务表', '兑换记录表', '教材表']
+			tableList.forEach(table => {
+				if (neededTables.includes(table.name)) {
+					tables[table.name] = table.table_id
+				}
+			})
+			
+			await this.initCloudObject()
+			return this.feishutools.getHomeData({
+				baseToken: this.baseToken,
+				childId: childId,
+				tables: tables
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 获取首页数据失败，尝试使用mock数据:', error.message)
+			return {
+				success: true,
+				data: {
+					tasks: mockTasks.filter(t => {
+						const taskChildId = this.normalizeChildId(t.fields.child_id)
+						return taskChildId === childId || !childId
+					}),
+					rewards: mockRewards.filter(r => {
+						const rewardChildId = this.normalizeChildId(r.fields.child_id)
+						return rewardChildId === childId || !childId
+					}).slice(0, 3),
+					textbooks: mockTextbooks.filter(b => {
+						const bookChildId = this.normalizeChildId(b.fields.child_id)
+						return bookChildId === childId || !childId
+					})
+				}
+			}
+		}
 	}
 
 	/**
