@@ -5,6 +5,30 @@
 			<button class="toolbar-btn" :class="{ active: currentFilter === '进行中' }" @click="setFilter('进行中')">进行中</button>
 			<button class="toolbar-btn" :class="{ active: currentFilter === '已完成' }" @click="setFilter('已完成')">已完成</button>
 		</view>
+		
+		<!-- 筛选区域 -->
+		<view class="filter-section">
+			<view class="filter-row">
+				<view class="filter-item">
+					<text class="filter-label">儿童</text>
+					<picker :value="filterChildIndex" :range="['全部'].concat(childNames)" @change="onFilterChildChange">
+						<view class="filter-picker">
+							{{ filterChildIndex === 0 ? '全部' : childNames[filterChildIndex - 1] || '请选择' }}
+							<text class="picker-arrow">›</text>
+						</view>
+					</picker>
+				</view>
+				<view class="filter-item">
+					<text class="filter-label">类型</text>
+					<picker :value="filterTypeIndex" :range="['全部'].concat(taskTypes)" @change="onFilterTypeChange">
+						<view class="filter-picker">
+							{{ filterTypeIndex === 0 ? '全部' : taskTypes[filterTypeIndex - 1] || '请选择' }}
+							<text class="picker-arrow">›</text>
+						</view>
+					</picker>
+				</view>
+			</view>
+		</view>
 
 		<!-- AI生成任务浮动按钮 -->
 		<view class="ai-float-btn" @click="showAIGenerate">
@@ -31,7 +55,8 @@
 							<text class="meta-item">⭐ {{ task.base_points }}积分</text>
 							<text v-if="task.reward_points && (!task.need_audit || task.audit_status === 'approved')" class="meta-item reward">🎁 +{{ task.reward_points }}</text>
 							<text v-if="task.reward_points && task.need_audit && task.audit_status !== 'approved'" class="meta-item audit-pending">🎁 待审核</text>
-							<text class="meta-item">{{ task.type_text }}</text>
+							<text class="meta-item type-tag">{{ task.type }}</text>
+							<text v-if="task.textbook_name" class="meta-item textbook-tag">📚 {{ task.textbook_name }}</text>
 						</view>
 						<view class="task-footer">
 							<text class="task-status" :class="task.status">{{ getStatusText(task.status) }}</text>
@@ -103,9 +128,18 @@
 						<text class="form-label">基础积分</text>
 						<input class="form-input" type="number" v-model="formData.base_points" placeholder="请输入基础积分" />
 					</view>
-					<view class="form-item">
+					<view class="form-item" v-if="formData.need_audit">
 						<text class="form-label">奖励积分</text>
 						<input class="form-input" type="number" v-model="formData.reward_points" placeholder="请输入奖励积分（完成任务额外奖励）" />
+					</view>
+					<view class="form-item">
+						<text class="form-label">截止时间</text>
+						<picker mode="date" :value="formatTimestampToDate(formData.deadline_time)" @change="onDeadlineChange">
+							<view class="form-picker">
+								{{ formatTimestampToDate(formData.deadline_time) || '请选择截止时间' }}
+								<text class="picker-arrow">›</text>
+							</view>
+						</picker>
 					</view>
 					<view class="form-item">
 						<view class="audit-switch">
@@ -122,6 +156,17 @@
 							:placeholder="'请选择儿童'"
 							:auto-select-first="false"
 							@change="onChildChange"
+						/>
+					</view>
+					<view class="form-item">
+						<text class="form-label">绑定教材</text>
+						<CustomPicker 
+							:options="textbookNames" 
+							v-model="textbookIndex" 
+							:title="'选择绑定教材'" 
+							:placeholder="'请选择教材（可选）'"
+							:auto-select-first="false"
+							@change="onTextbookChange"
 						/>
 					</view>
 				</view>
@@ -196,13 +241,16 @@
 					difficulty: '',
 					base_points: '',
 					reward_points: '',
+					deadline_time: '',
 					need_audit: false,
 					child_name: '',
-					child_id: ''
+					child_id: '',
+					textbook_id: '',
+					textbook_name: ''
 				},
-				taskTypes: ['阅读', '数学', '英语', '美术', '体育', '音乐', '科学'],  // 任务类型选项
+				taskTypes: [],  // 任务类型选项（从localStorage获取）
 				typeIndex: -1,
-				difficulties: ['简单', '中等', '困难'],         // 难度选项
+				difficulties: [],         // 难度选项（从localStorage获取）
 				difficultyIndex: -1,
 				children: [],            // 儿童列表
 				childIndex: -1,
@@ -218,15 +266,38 @@
 				aiPrompt: '',
 				taskCounts: [3, 5, 7, 10],
 				taskCountIndex: 1,
-				aiDifficultyIndex: 1  // AI弹窗专用的难度索引
+				aiDifficultyIndex: 1,  // AI弹窗专用的难度索引
+				// 筛选相关
+				filterChildIndex: 0,    // 儿童筛选索引，0表示全部
+				filterTypeIndex: 0,     // 类型筛选索引，0表示全部
+				// 教材相关
+				textbooks: [],           // 教材列表
+				textbookNames: [],       // 教材名称列表
+				textbookIndex: -1        // 教材选择索引
 			}
 		},
 		computed: {
 			filteredTasks() {
-				if (this.currentFilter === 'all') {
-					return this.tasks
+				let result = this.tasks
+				
+				// 状态筛选
+				if (this.currentFilter !== 'all') {
+					result = result.filter(task => task.status === this.currentFilter)
 				}
-				return this.tasks.filter(task => task.status === this.currentFilter)
+				
+				// 儿童筛选
+				if (this.filterChildIndex > 0) {
+					const selectedChildName = this.childNames[this.filterChildIndex - 1]
+					result = result.filter(task => task.child_name === selectedChildName)
+				}
+				
+				// 类型筛选
+				if (this.filterTypeIndex > 0) {
+					const selectedType = this.taskTypes[this.filterTypeIndex - 1]
+					result = result.filter(task => task.type === selectedType || task.type_text === selectedType)
+				}
+				
+				return result
 			}
 		},
 		methods: {
@@ -244,12 +315,19 @@
 				return icons[type] || icons.default
 			},
 			getDifficultyText(difficulty) {
+				if (!difficulty) return '简单'
 				// 如果 difficulty 已经是中文，直接返回
 				if (['简单', '中等', '困难'].includes(difficulty)) {
 					return difficulty
 				}
-				// 英文标识转中文
-				const texts = { easy: '简单', medium: '中等', hard: '困难' }
+				// 英文标识转中文，以及同义词映射
+				const texts = { 
+					easy: '简单', 
+					medium: '中等', 
+					hard: '困难',
+					'适中': '中等',
+					'moderate': '中等'
+				}
 				return texts[difficulty] || difficulty
 			},
 			getStatusText(status) {
@@ -266,9 +344,12 @@
 					difficulty: task.difficulty,
 					base_points: task.base_points.toString(),
 					reward_points: task.reward_points ? task.reward_points.toString() : '',
+					deadline_time: task.deadline_time || '',
 					need_audit: task.need_audit || false,
 					child_name: task.child_name,
-					child_id: task.child_id
+					child_id: task.child_id,
+					textbook_id: task.textbook_id || '',
+					textbook_name: task.textbook_name || ''
 				}
 				// 任务类型回显：先匹配type_text，再匹配type，都找不到则设为-1
 				let typeIdx = this.taskTypes.indexOf(task.type_text)
@@ -296,6 +377,11 @@
 						   normalizedChildId.includes(childKey)
 				})
 				console.log('[Tasks] 编辑任务儿童回显:', task.child_id, normalizedChildId, this.childIndex)
+				
+				// 绑定教材回显：根据textbook_id匹配教材索引
+				this.textbookIndex = this.textbooks.findIndex(t => t.id === task.textbook_id)
+				console.log('[Tasks] 编辑任务教材回显:', task.textbook_id, this.textbookIndex)
+				
 				this.showAddModal = true
 			},
 			deleteTask(task) {
@@ -322,6 +408,15 @@
 					}
 				})
 			},
+			// 将时间戳转换为日期字符串 YYYY-MM-DD
+			formatTimestampToDate(timestamp) {
+				if (!timestamp) return ''
+				const date = new Date(parseInt(timestamp))
+				const year = date.getFullYear()
+				const month = String(date.getMonth() + 1).padStart(2, '0')
+				const day = String(date.getDate()).padStart(2, '0')
+				return `${year}-${month}-${day}`
+			},
 			// CustomPicker的change事件处理 - 任务类型
 			onTypeChange(index, option) {
 				this.formData.type_text = option
@@ -336,8 +431,29 @@
 				this.formData.child_name = option
 				this.formData.child_id = this.children[index]?.child_id || this.children[index]?.id || ''
 			},
+			// CustomPicker的change事件处理 - 绑定教材
+			onTextbookChange(index, option) {
+				this.formData.textbook_name = option
+				this.formData.textbook_id = this.textbooks[index]?.id || ''
+			},
 			onAuditChange(e) {
 				this.formData.need_audit = e.detail.value
+			},
+			onDeadlineChange(e) {
+				const dateStr = e.detail.value
+				if (dateStr) {
+					// 将日期字符串转换为Unix时间戳（毫秒）
+					const timestamp = new Date(dateStr).getTime()
+					this.formData.deadline_time = timestamp
+				} else {
+					this.formData.deadline_time = ''
+				}
+			},
+			onFilterChildChange(e) {
+				this.filterChildIndex = e.detail.value
+			},
+			onFilterTypeChange(e) {
+				this.filterTypeIndex = e.detail.value
 			},
 			closeModal() {
 				this.showAddModal = false
@@ -350,13 +466,17 @@
 					difficulty: '',
 					base_points: '',
 					reward_points: '',
+					deadline_time: '',
 					need_audit: false,
 					child_name: '',
-					child_id: ''
+					child_id: '',
+					textbook_id: '',
+					textbook_name: ''
 				}
 				this.typeIndex = -1
 				this.difficultyIndex = -1
 				this.childIndex = -1
+				this.textbookIndex = -1
 				this.useTemplate = false
 				this.templateIndex = -1
 			},
@@ -447,8 +567,10 @@
 					difficulty: this.formData.difficulty,
 					base_points: parseInt(this.formData.base_points),
 					reward_points: this.formData.reward_points ? parseInt(this.formData.reward_points) : 0,
+					deadline_time: this.formData.deadline_time || '',
 					need_audit: this.formData.need_audit || false,
 					child_id: this.formData.child_id,
+					textbook_id: this.formData.textbook_id || '',
 					status: '未开始'
 				}
 
@@ -522,13 +644,13 @@
 						if (categories.task_type && categories.task_type.length > 0) {
 							this.taskTypes = categories.task_type.map(t => t.label)
 						} else {
-							this.taskTypes = ['阅读', '数学', '英语', '美术', '体育', '音乐', '科学']
+							this.loadCategoriesFromStorage()
 						}
 						// 难度等级从分类表的 task_difficulty 字段获取
 						if (categories.task_difficulty && categories.task_difficulty.length > 0) {
 							this.difficulties = categories.task_difficulty.map(d => d.label)
 						} else {
-							this.difficulties = ['简单', '中等', '困难']
+							this.loadDifficultiesFromStorage()
 						}
 						// 任务状态从分类表的 task_status 字段获取
 						if (categories.task_status && categories.task_status.length > 0) {
@@ -537,17 +659,61 @@
 							this.taskStatuses = ['未开始', '进行中', '已完成', '已取消']
 						}
 					} else {
-						// 分类数据加载失败，使用默认值
-						this.taskTypes = ['阅读', '数学', '英语', '美术', '体育', '音乐', '科学']
-						this.difficulties = ['简单', '中等', '困难']
+						// 分类数据加载失败，从 localStorage 获取
+						this.loadCategoriesFromStorage()
+						this.loadDifficultiesFromStorage()
 						this.taskStatuses = ['未开始', '进行中', '已完成', '已取消']
 					}
 				} catch (error) {
 					console.error('[Tasks] 加载分类数据失败:', error)
-					// 异常情况使用默认值
-					this.taskTypes = ['阅读', '数学', '英语', '美术', '体育', '音乐', '科学']
-					this.difficulties = ['简单', '中等', '困难']
+					// 异常情况从 localStorage 获取
+					this.loadCategoriesFromStorage()
+					this.loadDifficultiesFromStorage()
 					this.taskStatuses = ['未开始', '进行中', '已完成', '已取消']
+				}
+			},
+			loadCategoriesFromStorage() {
+				try {
+					const categoriesStr = localStorage.getItem('categories')
+					console.log('categoriesStr------',categoriesStr);
+					
+					if (categoriesStr) {
+						const categories = JSON.parse(categoriesStr)
+						if (categories[0].fields.task_type && categories[0].fields.task_type.length > 0) {
+							this.taskTypes = categories[0].fields.task_type
+						}
+					}
+					console.log('this.taskTypes------',this.taskTypes);
+
+					// 如果 localStorage 也没有数据，使用默认值
+					if (!this.taskTypes || this.taskTypes.length === 0) {
+						this.taskTypes = []
+					}
+				} catch (error) {
+					console.error('[Tasks] 从localStorage加载任务类型失败:', error)
+					this.taskTypes = []
+				}
+			},
+			loadDifficultiesFromStorage() {
+				try {
+					const categoriesStr = localStorage.getItem('categories')
+					console.log('categoriesStr------',categoriesStr);
+					
+					if (categoriesStr) {
+						const categories = JSON.parse(categoriesStr)
+						if (categories[0].fields.task_difficulty && categories[0].fields.task_difficulty.length > 0) {
+							this.difficulties = categories[0].fields.task_difficulty
+						}
+					}
+					console.log('this.difficulties------',this.difficulties);
+
+					// 如果 localStorage 也没有数据，使用默认值
+					if (!this.difficulties || this.difficulties.length === 0) {
+						this.difficulties = []
+					}
+				} catch (error) {
+					console.error('[Tasks] 从localStorage加载难度失败:', error)
+					this.difficulties = []
 				}
 			},
 			async loadChildren() {
@@ -568,6 +734,28 @@
 					}
 				} catch (error) {
 					console.error('[Tasks] 加载儿童列表失败:', error)
+				}
+			},
+			async loadTextbooks() {
+				try {
+					const result = await feishuRequest.queryRecords('教材表')
+					if (result.success && result.data && result.data.length > 0) {
+						this.textbooks = result.data.map(item => {
+							const name = item.fields.name 
+								? (Array.isArray(item.fields.name) && item.fields.name[0] && item.fields.name[0].text 
+									? item.fields.name[0].text 
+									: item.fields.name)
+								: ''
+							return {
+								id: item.fields.id || item.record_id,
+								name: name,
+								subject: item.fields.subject || ''
+							}
+						})
+						this.textbookNames = this.textbooks.map(t => t.name)
+					}
+				} catch (error) {
+					console.error('[Tasks] 加载教材列表失败:', error)
 				}
 			},
 			getChildName(childId) {
@@ -600,6 +788,28 @@
 				}
 				return String(id).trim()
 			},
+			parseChildName(childName) {
+				if (!childName) return '未关联'
+				// 支持数据结构：{ type: 1, value: [{ text: "顺顺" }] }
+				if (typeof childName === 'object') {
+					if (childName.value && Array.isArray(childName.value) && childName.value[0] && childName.value[0].text) {
+						return childName.value[0].text.trim()
+					}
+					if (childName.text) return String(childName.text).trim()
+					if (Array.isArray(childName) && childName[0] && childName[0].text) {
+						return childName[0].text.trim()
+					}
+				}
+				if (typeof childName === 'string') return childName.trim()
+				return '未知儿童'
+			},
+			parseTextbookName(textbookId) {
+				if (!textbookId) return ''
+				// 从已加载的教材列表中查找教材名称
+				const textbook = this.textbooks.find(t => t.id === textbookId)
+				if (textbook) return textbook.name
+				return ''
+			},
 			setFilter(filter) {
 				this.currentFilter = filter
 			},
@@ -625,27 +835,35 @@
 							// 使用 normalizeChildId 统一处理 child_id
 							const childId = this.normalizeChildId(item.fields.child_id || item.fields.childId || '')
 							
-							// 获取奖励积分和审核相关字段
-							const reward_points = item.fields.reward_points || 0
-							const need_audit = item.fields.need_audit || false
-							const audit_status = item.fields.audit_status || 'pending'
+							// 解析 child_name，支持多种数据结构
+							const childName = this.parseChildName(item.fields.child_name)
 							
-							return {
-								id: item.record_id,
-								title: title,
-								description: description,
-								type: item.fields.type || '',
-								type_text: item.fields.type_text || '',
-								difficulty: item.fields.difficulty || '简单',
-								base_points: item.fields.base_points || 0,
-								reward_points: reward_points,
-								need_audit: need_audit,
-								audit_status: audit_status,
-								child_id: childId,
-								child_name: this.getChildName(childId),
-								status: item.fields.status || '未开始',
-								updated_at: item.fields.updated_at || item.created_at || Date.now()
-							}
+							// 获取奖励积分和审核相关字段
+								const reward_points = item.fields.reward_points || 0
+								const need_audit = item.fields.need_audit || false
+								const audit_status = item.fields.audit_status || 'pending'
+								
+								// 解析教材名称
+								const textbookName = this.parseTextbookName(item.fields.textbook_id)
+								
+								return {
+									id: item.record_id,
+									title: title,
+									description: description,
+									type: item.fields.type || '',
+									type_text: item.fields.type_text || '',
+									difficulty: item.fields.difficulty || '简单',
+									base_points: item.fields.base_points || 0,
+									reward_points: reward_points,
+									need_audit: need_audit,
+									audit_status: audit_status,
+									child_id: childId,
+									child_name: childName,
+									textbook_id: item.fields.textbook_id || '',
+									textbook_name: textbookName,
+									status: item.fields.status || '未开始',
+									updated_at: item.fields.updated_at || item.created_at || Date.now()
+								}
 						})
 						this.tasks.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
 					} else {
@@ -665,10 +883,19 @@
 						type: taskData.type,
 						difficulty: taskData.difficulty,
 						base_points: taskData.base_points,
-						reward_points: taskData.reward_points || 0,
 						need_audit: taskData.need_audit || false,
 						child_id: taskData.child_id,
 						status: taskData.status || '进行中'
+					}
+					// 只有有值时才添加字段
+					if (taskData.reward_points && taskData.reward_points > 0) {
+						data.reward_points = taskData.reward_points
+					}
+					if (taskData.deadline_time) {
+						data.deadline_time = taskData.deadline_time
+					}
+					if (taskData.textbook_id) {
+						data.textbook_id = taskData.textbook_id
 					}
 					const result = await feishuRequest.addRecord('任务表', data)
 					if (result.success) {
@@ -689,10 +916,19 @@
 						type_text: taskData.type_text,
 						difficulty: taskData.difficulty,
 						base_points: taskData.base_points,
-						reward_points: taskData.reward_points || 0,
 						need_audit: taskData.need_audit || false,
 						child_id: taskData.child_id,
 						child_name: taskData.child_name
+					}
+					// 只有有值时才添加字段
+					if (taskData.reward_points && taskData.reward_points > 0) {
+						data.reward_points = taskData.reward_points
+					}
+					if (taskData.deadline_time) {
+						data.deadline_time = taskData.deadline_time
+					}
+					if (taskData.textbook_id) {
+						data.textbook_id = taskData.textbook_id
 					}
 					const result = await feishuRequest.updateRecord('任务表', taskId, data)
 					if (result.success) {
@@ -720,6 +956,7 @@
 		async onLoad() {
 			await this.loadChildren()
 			await this.loadCategories()
+			await this.loadTextbooks()
 		},
 		async onShow() {
 			if (this.$refs.tabBar) {
@@ -757,6 +994,51 @@
 			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 			color: #fff;
 			border: none;
+		}
+	}
+
+	.filter-section {
+		background-color: #fff;
+		margin: 20rpx;
+		border-radius: 16rpx;
+		padding: 25rpx;
+		box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+	}
+
+	.filter-row {
+		display: flex;
+		gap: 30rpx;
+	}
+
+	.filter-item {
+		flex: 1;
+	}
+
+	.filter-label {
+		font-size: 26rpx;
+		color: #666;
+		display: block;
+		margin-bottom: 12rpx;
+		font-weight: 500;
+	}
+
+	.filter-picker {
+		width: 100%;
+		height: 80rpx;
+		padding: 0 24rpx;
+		border: 2rpx solid #f0f0f0;
+		border-radius: 12rpx;
+		font-size: 28rpx;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		color: #333;
+		background-color: #fafafa;
+		transition: all 0.2s ease;
+
+		&:active {
+			background-color: #f0f0f0;
+			border-color: #667eea;
 		}
 	}
 
