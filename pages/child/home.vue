@@ -118,6 +118,20 @@
 			</view>
 		</view>
 
+		<view class="section">
+			<text class="section-title">🎯 能力测试</text>
+			<view class="test-entry-card" @click="goToTests">
+				<view class="test-card-left">
+					<view class="test-icon">🧪</view>
+					<view class="test-info">
+						<text class="test-title">发现你的潜力</text>
+						<text class="test-desc">知识测试 · 性格测试 · 职业测试</text>
+					</view>
+				</view>
+				<view class="test-arrow">›</view>
+			</view>
+		</view>
+
 		<view class="modal-overlay" v-if="showChildSwitchModal" @click="closeChildSwitchModal">
 			<view class="modal-content" @click.stop>
 				<view class="modal-header">
@@ -792,6 +806,9 @@
 			goToPointsHistory() {
 				uni.navigateTo({ url: '/pages/child/points-history' })
 			},
+			goToTests() {
+				uni.navigateTo({ url: '/pages/child/tests' })
+			},
 			continueLearning() {
 				uni.showToast({ title: '继续学习', icon: 'none' })
 			},
@@ -1284,6 +1301,48 @@
 		font-size: 24rpx;
 		color: #667eea;
 		font-weight: bold;
+	}
+
+	.test-entry-card {
+		display: flex;
+		align-items: center;
+		padding: 25rpx;
+		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		border-radius: 16rpx;
+	}
+
+	.test-card-left {
+		display: flex;
+		align-items: center;
+		flex: 1;
+	}
+
+	.test-icon {
+		font-size: 50rpx;
+		margin-right: 20rpx;
+	}
+
+	.test-info {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.test-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #fff;
+		display: block;
+		margin-bottom: 5rpx;
+	}
+
+	.test-desc {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.test-arrow {
+		font-size: 40rpx;
+		color: rgba(255, 255, 255, 0.6);
 	}
 
 	.continue-btn {

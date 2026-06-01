@@ -6,8 +6,11 @@
 		</view>
 
 		<view class="category-tabs">
-			<view class="category-tab" v-for="cat in categories" :key="cat.id" :class="{ active: selectedCategory === cat.id }" @click="selectedCategory = cat.id">
-				{{ cat.icon }} {{ cat.name }}
+			<view class="category-tab" :class="{ active: selectedCategory === '全部' }" @click="selectedCategory = '全部'">
+				🎯 全部
+			</view>
+			<view class="category-tab" v-for="cat in categories" :key="cat" :class="{ active: selectedCategory === cat }" @click="selectedCategory = cat">
+				{{ getCategoryIcon(cat) }} {{ cat }}
 			</view>
 		</view>
 
@@ -81,14 +84,8 @@
 		data() {
 			return {
 				balance: 0,
-				selectedCategory: 'all',
-				categories: [
-					{ id: 'all', name: '全部', icon: '🎯' },
-					{ id: 'toy', name: '玩具', icon: '🎮' },
-					{ id: 'book', name: '图书', icon: '📚' },
-					{ id: 'food', name: '零食', icon: '🍭' },
-					{ id: 'stationery', name: '文具', icon: '✏️' }
-				],
+				selectedCategory: '全部',
+				categories: [],
 				gifts: [],
 				showDetailModal: false,
 				selectedGift: null
@@ -96,13 +93,43 @@
 		},
 		computed: {
 			filteredGifts() {
-				if (this.selectedCategory === 'all') {
+				if (this.selectedCategory === '全部') {
 					return this.gifts
 				}
 				return this.gifts.filter(gift => gift.category === this.selectedCategory)
 			}
 		},
 		methods: {
+			/**
+			 * 从localStorage加载礼品分类
+			 */
+			loadCategories() {
+				try {
+					const categoriesStr = localStorage.getItem('categories')
+					if (categoriesStr) {
+						const categories = JSON.parse(categoriesStr)
+						if (categories[0] && categories[0].fields && categories[0].fields.gift_category && categories[0].fields.gift_category.length > 0) {
+							this.categories = categories[0].fields.gift_category
+						}
+					}
+				} catch (error) {
+					console.error('[Parent Mall] 加载分类失败:', error)
+					this.categories = []
+				}
+			},
+			/**
+			 * 获取分类图标
+			 */
+			getCategoryIcon(category) {
+				const icons = {
+					'玩具': '🎮',
+					'图书': '📚',
+					'零食': '🍭',
+					'文具': '✏️',
+					'其他': '🎁'
+				}
+				return icons[category] || '🎁'
+			},
 			/**
 			 * 加载礼品数据（从多维表格获取）
 			 */
@@ -224,6 +251,7 @@
 			}
 		},
 		onLoad() {
+			this.loadCategories()
 			this.loadGifts()
 		}
 	}

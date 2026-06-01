@@ -99,7 +99,10 @@
 				if (this.selectedCategory === 'all') {
 					return this.gifts
 				}
-				return this.gifts.filter(gift => gift.category === this.selectedCategory)
+				// 根据selectedCategory(id)获取对应的中文名称
+				const category = this.categories.find(c => c.id === this.selectedCategory)
+				const categoryName = category ? category.name : ''
+				return this.gifts.filter(gift => gift.category === categoryName)
 			}
 		},
 		methods: {
@@ -108,19 +111,22 @@
 			 */
 			selectCategory(categoryId) {
 				this.selectedCategory = categoryId
-				this.loadGifts(categoryId)
+				// 根据id获取中文名称
+				const category = this.categories.find(c => c.id === categoryId)
+				const categoryName = category ? category.name : '全部'
+				this.loadGifts(categoryName)
 			},
 			
 			/**
 			 * 加载礼品数据（从多维表格获取）
-			 * @param {string} category - 商品分类
+			 * @param {string} category - 商品分类（中文名称）
 			 */
-			async loadGifts(category = 'all') {
+			async loadGifts(category = '全部') {
 				try {
 					uni.showLoading({ title: '加载中...' })
 					
-					// 构建过滤条件，如果不是"全部"则添加分类过滤
-					const filter = category === 'all' ? {} : { category: category }
+					// 构建过滤条件，如果不是"全部"则添加分类过滤（使用中文名称）
+					const filter = category === '全部' ? {} : { category: category }
 					const result = await feishuRequest.queryRecords('礼品表', filter)
 					
 					if (result.success && result.data && result.data.length > 0) {
@@ -258,7 +264,7 @@
 			}
 		},
 		onLoad() {
-			this.loadGifts(this.selectedCategory)
+			this.loadGifts('全部')
 			this.loadBalance()
 		}
 	}

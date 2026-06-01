@@ -120,6 +120,12 @@
 			}
 		},
 		{
+			"path": "pages/child/tests",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/child/points-history",
 			"style": {
 				"navigationStyle": "custom"
