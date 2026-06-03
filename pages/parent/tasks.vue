@@ -11,21 +11,30 @@
 			<view class="filter-row">
 				<view class="filter-item">
 					<text class="filter-label">儿童</text>
-					<picker :value="filterChildIndex" :range="['全部'].concat(childNames)" @change="onFilterChildChange">
-						<view class="filter-picker">
-							{{ filterChildIndex === 0 ? '全部' : childNames[filterChildIndex - 1] || '请选择' }}
-							<text class="picker-arrow">›</text>
-						</view>
-					</picker>
+					<uni-data-select
+						v-model="filterChildId"
+						:localdata="filterChildOptions"
+						placeholder="全部"
+					/>
 				</view>
 				<view class="filter-item">
 					<text class="filter-label">类型</text>
-					<picker :value="filterTypeIndex" :range="['全部'].concat(taskTypes)" @change="onFilterTypeChange">
-						<view class="filter-picker">
-							{{ filterTypeIndex === 0 ? '全部' : taskTypes[filterTypeIndex - 1] || '请选择' }}
-							<text class="picker-arrow">›</text>
-						</view>
-					</picker>
+					<uni-data-select
+						v-model="filterTypeId"
+						:localdata="filterTypeOptions"
+						placeholder="全部"
+					/>
+				</view>
+			</view>
+			<view class="filter-row">
+				<view class="filter-item">
+					<text class="filter-label">开始时间</text>
+					<uni-datetime-picker
+						v-model="filterStartTime"
+						type="date"
+						return-type="timestamp"
+						placeholder="选择开始时间"
+					/>
 				</view>
 			</view>
 		</view>
@@ -39,7 +48,7 @@
 		<view class="section">
 			<view class="section-header">
 				<text class="section-title">📋 任务列表</text>
-				<button class="add-btn" @click="showAddModal = true">+ 新建任务</button>
+				<button class="add-btn" @click="creatTask">+ 新建任务</button>
 			</view>
 			<view class="task-list">
 				<view class="task-card" v-for="task in filteredTasks" :key="task.id">
@@ -67,153 +76,33 @@
 						</view>
 					</view>
 				</view>
+				<view v-if="filteredTasks.length === 0" class="empty-state">
+					<text class="empty-icon">📭</text>
+					<text class="empty-text">暂无任务数据</text>
+					<text class="empty-hint">点击右上角按钮创建新任务</text>
+				</view>
 			</view>
 		</view>
 
-		<view class="modal-overlay" v-if="showAddModal" @click="closeModal">
-			<view class="modal-content" @click.stop>
-				<view class="modal-header">
-					<text class="modal-title">{{ editingTask ? '编辑任务' : '新建任务' }}</text>
-					<text class="modal-close" @click="closeModal">✕</text>
-				</view>
-				<view class="modal-body">
-					<view class="form-item" v-if="!editingTask">
-						<view class="template-switch">
-							<text class="form-label">使用模板</text>
-							<switch :checked="useTemplate" @change="onUseTemplateChange" />
-						</view>
-					</view>
-					<view class="form-item" v-if="useTemplate && !editingTask">
-						<text class="form-label">选择模板</text>
-						<CustomPicker 
-							:options="templateNames" 
-							v-model="templateIndex" 
-							:title="'选择任务模板'" 
-							:placeholder="'请选择模板'"
-							:auto-select-first="false"
-							@change="onTemplateChange"
-						/>
-					</view>
-					<view class="form-item">
-						<text class="form-label">任务标题</text>
-						<input class="form-input" v-model="formData.title" placeholder="请输入任务标题" />
-					</view>
-					<view class="form-item">
-						<text class="form-label">任务描述</text>
-						<textarea class="form-textarea" v-model="formData.description" placeholder="请输入任务描述"></textarea>
-					</view>
-					<view class="form-item">
-						<text class="form-label">任务类型</text>
-						<CustomPicker 
-							:options="taskTypes" 
-							v-model="typeIndex" 
-							:title="'选择任务类型'" 
-							:placeholder="'请选择类型'"
-							:auto-select-first="false"
-							@change="onTypeChange"
-						/>
-					</view>
-					<view class="form-item">
-						<text class="form-label">难度等级</text>
-						<CustomPicker 
-							:options="difficulties" 
-							v-model="difficultyIndex" 
-							:title="'选择难度等级'" 
-							:placeholder="'请选择难度'"
-							:auto-select-first="false"
-							@change="onDifficultyChange"
-						/>
-					</view>
-					<view class="form-item">
-						<text class="form-label">基础积分</text>
-						<input class="form-input" type="number" v-model="formData.base_points" placeholder="请输入基础积分" />
-					</view>
-					<view class="form-item" v-if="formData.need_audit">
-						<text class="form-label">奖励积分</text>
-						<input class="form-input" type="number" v-model="formData.reward_points" placeholder="请输入奖励积分（完成任务额外奖励）" />
-					</view>
-					<view class="form-item">
-						<text class="form-label">截止时间</text>
-						<picker mode="date" :value="formatTimestampToDate(formData.deadline_time)" @change="onDeadlineChange">
-							<view class="form-picker">
-								{{ formatTimestampToDate(formData.deadline_time) || '请选择截止时间' }}
-								<text class="picker-arrow">›</text>
-							</view>
-						</picker>
-					</view>
-					<view class="form-item">
-						<view class="audit-switch">
-							<text class="form-label">需要审核</text>
-							<switch :checked="formData.need_audit" @change="onAuditChange" />
-						</view>
-					</view>
-					<view class="form-item">
-						<text class="form-label">关联儿童</text>
-						<CustomPicker 
-							:options="childNames" 
-							v-model="childIndex" 
-							:title="'选择关联儿童'" 
-							:placeholder="'请选择儿童'"
-							:auto-select-first="false"
-							@change="onChildChange"
-						/>
-					</view>
-					<view class="form-item">
-						<text class="form-label">绑定教材</text>
-						<CustomPicker 
-							:options="textbookNames" 
-							v-model="textbookIndex" 
-							:title="'选择绑定教材'" 
-							:placeholder="'请选择教材（可选）'"
-							:auto-select-first="false"
-							@change="onTextbookChange"
-						/>
-					</view>
-				</view>
-				<view class="modal-footer">
-					<button class="btn btn-secondary" @click="closeModal">取消</button>
-					<button class="btn btn-primary" @click="saveTask">保存</button>
-				</view>
-			</view>
-		</view>
+		<!-- 任务表单弹窗 -->
+		<TaskFormModal
+			:visible="showAddModal"
+			:editing-task="editingTask"
+			:task-types="taskTypes"
+			:difficulties="difficulties"
+			:children="children"
+			:textbooks="textbooks"
+			@close="showAddModal = false"
+			@save="handleTaskSave"
+		/>
 
 		<!-- AI生成任务弹窗 -->
-		<view class="modal-overlay" v-if="showAIModal" @click="closeAIModal">
-			<view class="modal-content" @click.stop>
-				<view class="modal-header">
-					<text class="modal-title">🤖 AI生成任务</text>
-					<text class="modal-close" @click="closeAIModal">✕</text>
-				</view>
-				<view class="modal-body">
-					<view class="form-item">
-						<text class="form-label">生成主题</text>
-						<input class="form-input" v-model="aiPrompt" placeholder="例如：为三年级学生生成一周阅读任务" />
-					</view>
-					<view class="form-item">
-						<text class="form-label">任务数量</text>
-						<picker :value="taskCountIndex" :range="taskCounts" @change="onTaskCountChange">
-							<view class="form-picker">
-								{{ taskCounts[taskCountIndex] }} 个
-								<text class="picker-arrow">›</text>
-							</view>
-						</picker>
-					</view>
-					<view class="form-item">
-						<text class="form-label">难度等级</text>
-						<picker :value="aiDifficultyIndex" :range="difficulties" @change="onAIDifficultyChange">
-							<view class="form-picker">
-								{{ difficulties[aiDifficultyIndex] }}
-								<text class="picker-arrow">›</text>
-							</view>
-						</picker>
-					</view>
-				</view>
-				<view class="modal-footer">
-					<button class="btn btn-secondary" @click="closeAIModal">取消</button>
-					<button class="btn btn-primary" @click="generateTasks">生成</button>
-				</view>
-			</view>
-		</view>
+		<AITaskModal
+			:visible="showAIModal"
+			:difficulties="difficulties"
+			@close="showAIModal = false"
+			@generate="handleGenerateTasks"
+		/>
 		
 		<custom-tab-bar ref="tabBar"></custom-tab-bar>
 	</view>
@@ -221,62 +110,91 @@
 
 <script>
 	import customTabBar from '@/custom-tab-bar/index.vue'
-	import CustomPicker from '@/components/CustomPicker.vue'
+	import TaskFormModal from '@/components/TaskFormModal.vue'
+	import AITaskModal from '@/components/AITaskModal.vue'
 	import UserManager from '@/common/user-manager.js'
 	import { feishuRequest } from '@/common/feishu-request.js'
 	import CategoryManager from '@/common/category-manager.js'
 	export default {
-		components: { customTabBar, CustomPicker },
+		components: { customTabBar, TaskFormModal, AITaskModal },
 		data() {
 			return {
 				tasks: [],
 				currentFilter: 'all',  // 'all' | '进行中' | '已完成'
 				showAddModal: false,
 				editingTask: null,
-				formData: {
-					title: '',
-					description: '',
-					type: '',
-					type_text: '',
-					difficulty: '',
-					base_points: '',
-					reward_points: '',
-					deadline_time: '',
-					need_audit: false,
-					child_name: '',
-					child_id: '',
-					textbook_id: '',
-					textbook_name: ''
-				},
 				taskTypes: [],  // 任务类型选项（从localStorage获取）
-				typeIndex: -1,
 				difficulties: [],         // 难度选项（从localStorage获取）
-				difficultyIndex: -1,
 				children: [],            // 儿童列表
-				childIndex: -1,
 				childNames: [],
 				parentPhone: '',
-				// 模板相关
-				useTemplate: false,
-				templates: [],           // 任务模板列表
-				templateIndex: -1,
-				templateNames: [],       // 模板名称列表
 				// AI生成任务相关
 				showAIModal: false,
-				aiPrompt: '',
-				taskCounts: [3, 5, 7, 10],
-				taskCountIndex: 1,
-				aiDifficultyIndex: 1,  // AI弹窗专用的难度索引
 				// 筛选相关
-				filterChildIndex: 0,    // 儿童筛选索引，0表示全部
-				filterTypeIndex: 0,     // 类型筛选索引，0表示全部
+				filterChildId: '',      // 儿童筛选ID
+				filterTypeId: '',       // 类型筛选值
+				filterStartTime: '',    // 开始时间筛选（时间戳）
 				// 教材相关
 				textbooks: [],           // 教材列表
-				textbookNames: [],       // 教材名称列表
-				textbookIndex: -1        // 教材选择索引
+				textbookNames: []        // 教材名称列表
 			}
 		},
 		computed: {
+			// 任务类型选项（用于uni-data-select）
+				taskTypeOptions() {
+					return this.taskTypes.map(type => ({
+						value: type,
+						text: type
+					}))
+				},
+				// 难度选项（用于uni-data-select）
+				difficultyOptions() {
+					return this.difficulties.map(diff => ({
+						value: diff,
+						text: diff
+					}))
+				},
+				// 儿童选项（用于uni-data-select）
+				childOptions() {
+					return this.children.map((child, index) => ({
+						value: index.toString(),
+						text: child.name
+					}))
+				},
+				// 筛选儿童选项（包含全部选项）
+				filterChildOptions() {
+					return [{
+						value: '',
+						text: '全部'
+					}, ...this.children.map(child => ({
+						value: child.child_id,
+						text: child.name
+					}))]
+				},
+				// 筛选类型选项（包含全部选项）
+				filterTypeOptions() {
+					return [{
+						value: '',
+						text: '全部'
+					}, ...this.taskTypes.map(type => ({
+						value: type,
+						text: type
+					}))]
+				},
+				// 教材选项（用于uni-data-select）
+				textbookOptions() {
+					return this.textbooks.map(textbook => ({
+						value: textbook.id,
+						text: textbook.name
+					}))
+				},
+				// 模板选项（用于uni-data-select）
+				templateOptions() {
+					return this.templates.map((template, index) => ({
+						value: index.toString(),
+						text: template.title || '未命名模板'
+					}))
+				},
 			filteredTasks() {
 				let result = this.tasks
 				
@@ -286,18 +204,35 @@
 				}
 				
 				// 儿童筛选
-				if (this.filterChildIndex > 0) {
-					const selectedChildName = this.childNames[this.filterChildIndex - 1]
-					result = result.filter(task => task.child_name === selectedChildName)
+				if (this.filterChildId) {
+					result = result.filter(task => task.child_id === this.filterChildId)
 				}
 				
 				// 类型筛选
-				if (this.filterTypeIndex > 0) {
-					const selectedType = this.taskTypes[this.filterTypeIndex - 1]
-					result = result.filter(task => task.type === selectedType || task.type_text === selectedType)
+				if (this.filterTypeId) {
+					result = result.filter(task => task.type === this.filterTypeId || task.type_text === this.filterTypeId)
+				}
+				
+				// 开始时间筛选
+				if (this.filterStartTime) {
+					result = result.filter(task => {
+						const taskTime = task.created_at || task.start_time || Date.now()
+						return Number(taskTime) >= Number(this.filterStartTime)
+					})
 				}
 				
 				return result
+			}
+		},
+		watch: {
+			filterChildId() {
+				this.loadTasks()
+			},
+			filterTypeId() {
+				this.loadTasks()
+			},
+			filterStartTime() {
+				this.loadTasks()
 			}
 		},
 		methods: {
@@ -334,54 +269,12 @@
 				const texts = { active: '进行中', completed: '已完成', paused: '已暂停' }
 				return texts[status] || status
 			},
+			creatTask(){
+				this.editingTask = null
+				this.showAddModal = true
+			},
 			editTask(task) {
 				this.editingTask = task
-				this.formData = {
-					title: task.title,
-					description: task.description,
-					type: task.type,
-					type_text: task.type_text,
-					difficulty: task.difficulty,
-					base_points: task.base_points.toString(),
-					reward_points: task.reward_points ? task.reward_points.toString() : '',
-					deadline_time: task.deadline_time || '',
-					need_audit: task.need_audit || false,
-					child_name: task.child_name,
-					child_id: task.child_id,
-					textbook_id: task.textbook_id || '',
-					textbook_name: task.textbook_name || ''
-				}
-				// 任务类型回显：先匹配type_text，再匹配type，都找不到则设为-1
-				let typeIdx = this.taskTypes.indexOf(task.type_text)
-				if (typeIdx === -1) {
-					typeIdx = this.taskTypes.indexOf(task.type)
-				}
-				this.typeIndex = typeIdx
-				console.log('[Tasks] 编辑任务类型回显:', task.type_text, task.type, typeIdx, this.taskTypes)
-				
-				// 难度回显：先将英文转换为中文，再匹配
-				const difficultyText = this.getDifficultyText(task.difficulty)
-				let difficultyIdx = this.difficulties.indexOf(difficultyText)
-				if (difficultyIdx === -1) {
-					difficultyIdx = this.difficulties.indexOf(task.difficulty)
-				}
-				this.difficultyIndex = difficultyIdx
-				console.log('[Tasks] 编辑任务难度回显:', task.difficulty, difficultyText, difficultyIdx, this.difficulties)
-				
-				// 关联儿童回显：根据child_id匹配儿童索引，支持多种id格式
-				const normalizedChildId = this.normalizeChildId(task.child_id)
-				this.childIndex = this.children.findIndex(c => {
-					const childKey = this.normalizeChildId(c.child_id || c.id || c.record_id)
-					return childKey === normalizedChildId || 
-						   childKey.includes(normalizedChildId) || 
-						   normalizedChildId.includes(childKey)
-				})
-				console.log('[Tasks] 编辑任务儿童回显:', task.child_id, normalizedChildId, this.childIndex)
-				
-				// 绑定教材回显：根据textbook_id匹配教材索引
-				this.textbookIndex = this.textbooks.findIndex(t => t.id === task.textbook_id)
-				console.log('[Tasks] 编辑任务教材回显:', task.textbook_id, this.textbookIndex)
-				
 				this.showAddModal = true
 			},
 			deleteTask(task) {
@@ -417,181 +310,31 @@
 				const day = String(date.getDate()).padStart(2, '0')
 				return `${year}-${month}-${day}`
 			},
-			// CustomPicker的change事件处理 - 任务类型
-			onTypeChange(index, option) {
-				this.formData.type_text = option
-				this.formData.type = option
+			showAIGenerate() {
+				this.showAIModal = true
 			},
-			// CustomPicker的change事件处理 - 难度等级
-			onDifficultyChange(index, option) {
-				this.formData.difficulty = option
-			},
-			// CustomPicker的change事件处理 - 关联儿童
-			onChildChange(index, option) {
-				this.formData.child_name = option
-				this.formData.child_id = this.children[index]?.child_id || this.children[index]?.id || ''
-			},
-			// CustomPicker的change事件处理 - 绑定教材
-			onTextbookChange(index, option) {
-				this.formData.textbook_name = option
-				this.formData.textbook_id = this.textbooks[index]?.id || ''
-			},
-			onAuditChange(e) {
-				this.formData.need_audit = e.detail.value
-			},
-			onDeadlineChange(e) {
-				const dateStr = e.detail.value
-				if (dateStr) {
-					// 将日期字符串转换为Unix时间戳（毫秒）
-					const timestamp = new Date(dateStr).getTime()
-					this.formData.deadline_time = timestamp
-				} else {
-					this.formData.deadline_time = ''
-				}
-			},
-			onFilterChildChange(e) {
-				this.filterChildIndex = e.detail.value
-			},
-			onFilterTypeChange(e) {
-				this.filterTypeIndex = e.detail.value
-			},
-			closeModal() {
-				this.showAddModal = false
-				this.editingTask = null
-				this.formData = {
-					title: '',
-					description: '',
-					type: '',
-					type_text: '',
-					difficulty: '',
-					base_points: '',
-					reward_points: '',
-					deadline_time: '',
-					need_audit: false,
-					child_name: '',
-					child_id: '',
-					textbook_id: '',
-					textbook_name: ''
-				}
-				this.typeIndex = -1
-				this.difficultyIndex = -1
-				this.childIndex = -1
-				this.textbookIndex = -1
-				this.useTemplate = false
-				this.templateIndex = -1
-			},
-			onUseTemplateChange(e) {
-				this.useTemplate = e.detail.value
-				if (this.useTemplate) {
-					this.loadTemplates()
-				} else {
-					this.templateIndex = -1
-				}
-			},
-			onTemplateChange(index, option) {
-				const template = this.templates[index]
-				if (template) {
-					this.formData.title = template.title || ''
-					this.formData.description = template.description || ''
-					this.formData.type = template.type || ''
-					this.formData.type_text = template.type_text || ''
-					this.formData.difficulty = template.difficulty || ''
-					this.formData.base_points = template.base_points ? template.base_points.toString() : ''
-					
-					if (template.type_text) {
-						this.typeIndex = this.taskTypes.indexOf(template.type_text)
-						if (this.typeIndex === -1) {
-							this.typeIndex = this.taskTypes.indexOf(template.type)
-						}
-					}
-					
-					if (template.difficulty) {
-						const difficultyText = this.getDifficultyText(template.difficulty)
-						this.difficultyIndex = this.difficulties.indexOf(difficultyText)
-						if (this.difficultyIndex === -1) {
-							this.difficultyIndex = this.difficulties.indexOf(template.difficulty)
-						}
-					}
-				}
-			},
-			async loadTemplates() {
-				try {
-					const result = await feishuRequest.queryRecords('任务模板表')
-					if (result.success && result.data && result.data.length > 0) {
-						this.templates = result.data.map(item => {
-							const title = item.fields.title 
-								? (Array.isArray(item.fields.title) && item.fields.title[0] && item.fields.title[0].text 
-									? item.fields.title[0].text 
-									: item.fields.title)
-								: ''
-							
-							const description = item.fields.description 
-								? (Array.isArray(item.fields.description) && item.fields.description[0] && item.fields.description[0].text 
-									? item.fields.description[0].text 
-									: item.fields.description)
-								: ''
-							
-							return {
-								id: item.record_id,
-								title: title,
-								description: description,
-								type: item.fields.type || '',
-								type_text: item.fields.type_text || '',
-								difficulty: item.fields.difficulty || '',
-								base_points: item.fields.base_points || 0
-							}
-						})
-						this.templateNames = this.templates.map(t => t.title || '未命名模板')
-					} else {
-						this.templates = []
-						this.templateNames = []
-					}
-				} catch (error) {
-					console.error('[Tasks] 加载模板列表失败:', error)
-					this.templates = []
-					this.templateNames = []
-				}
-			},
-			async saveTask() {
-				if (!this.formData.title || !this.formData.type || !this.formData.difficulty || !this.formData.base_points || !this.formData.child_id) {
-					uni.showToast({ title: '请填写完整信息', icon: 'none' })
-					return
-				}
-
+			// 处理任务保存
+			async handleTaskSave({ data, isEdit, editId }) {
 				uni.showLoading({ title: '保存中...' })
 
-				const taskData = {
-					title: this.formData.title,
-					description: this.formData.description,
-					type: this.formData.type,
-					difficulty: this.formData.difficulty,
-					base_points: parseInt(this.formData.base_points),
-					reward_points: this.formData.reward_points ? parseInt(this.formData.reward_points) : 0,
-					deadline_time: this.formData.deadline_time || '',
-					need_audit: this.formData.need_audit || false,
-					child_id: this.formData.child_id,
-					textbook_id: this.formData.textbook_id || '',
-					status: '未开始'
-				}
-
 				try {
-					if (this.editingTask) {
-						const success = await this.updateTaskToTable(this.editingTask.id, taskData)
+					if (isEdit) {
+						const success = await this.updateTaskToTable(editId, data)
 						if (success) {
-							const index = this.tasks.findIndex(t => t.id === this.editingTask.id)
+							const index = this.tasks.findIndex(t => t.id === editId)
 							if (index >= 0) {
-								this.tasks[index] = { ...this.tasks[index], ...taskData }
+								this.tasks[index] = { ...this.tasks[index], ...data }
 							}
 							uni.showToast({ title: '修改成功', icon: 'success' })
 						} else {
 							uni.showToast({ title: '修改失败', icon: 'none' })
 						}
 					} else {
-						const recordId = await this.addTaskToTable(taskData)
+						const recordId = await this.addTaskToTable(data)
 						if (recordId) {
 							this.tasks.unshift({
 								id: recordId,
-								...taskData,
+								...data,
 								status: '未开始'
 							})
 							uni.showToast({ title: '创建成功', icon: 'success' })
@@ -605,34 +348,15 @@
 				}
 
 				uni.hideLoading()
-				this.closeModal()
+				this.editingTask = null
 			},
-			showAIGenerate() {
-				this.showAIModal = true
-			},
-			closeAIModal() {
-				this.showAIModal = false
-				this.aiPrompt = ''
-				this.taskCountIndex = 1
-				this.aiDifficultyIndex = 1
-			},
-			onTaskCountChange(e) {
-				this.taskCountIndex = e.detail.value
-			},
-			// AI弹窗中原生picker的难度变化处理
-			onAIDifficultyChange(e) {
-				this.aiDifficultyIndex = e.detail.value
-			},
-			generateTasks() {
-				if (!this.aiPrompt.trim()) {
-					uni.showToast({ title: '请输入生成主题', icon: 'none' })
-					return
-				}
+			// 处理AI生成任务
+			handleGenerateTasks({ prompt, count, difficulty }) {
 				uni.showLoading({ title: 'AI生成中...' })
 				setTimeout(() => {
 					uni.hideLoading()
 					uni.showToast({ title: '生成成功！', icon: 'success' })
-					this.closeAIModal()
+					this.showAIModal = false
 					this.loadTasks()
 				}, 2000)
 			},
@@ -674,45 +398,19 @@
 			},
 			loadCategoriesFromStorage() {
 				try {
-					const categoriesStr = localStorage.getItem('categories')
-					console.log('categoriesStr------',categoriesStr);
-					
-					if (categoriesStr) {
-						const categories = JSON.parse(categoriesStr)
-						if (categories[0].fields.task_type && categories[0].fields.task_type.length > 0) {
-							this.taskTypes = categories[0].fields.task_type
-						}
-					}
-					console.log('this.taskTypes------',this.taskTypes);
-
-					// 如果 localStorage 也没有数据，使用默认值
-					if (!this.taskTypes || this.taskTypes.length === 0) {
-						this.taskTypes = []
-					}
+					this.taskTypes = CategoryManager.getTaskTypes()
+					console.log('this.taskTypes------', this.taskTypes);
 				} catch (error) {
-					console.error('[Tasks] 从localStorage加载任务类型失败:', error)
+					console.error('[Tasks] 从CategoryManager加载任务类型失败:', error)
 					this.taskTypes = []
 				}
 			},
 			loadDifficultiesFromStorage() {
 				try {
-					const categoriesStr = localStorage.getItem('categories')
-					console.log('categoriesStr------',categoriesStr);
-					
-					if (categoriesStr) {
-						const categories = JSON.parse(categoriesStr)
-						if (categories[0].fields.task_difficulty && categories[0].fields.task_difficulty.length > 0) {
-							this.difficulties = categories[0].fields.task_difficulty
-						}
-					}
-					console.log('this.difficulties------',this.difficulties);
-
-					// 如果 localStorage 也没有数据，使用默认值
-					if (!this.difficulties || this.difficulties.length === 0) {
-						this.difficulties = []
-					}
+					this.difficulties = CategoryManager.getDifficulties()
+					console.log('this.difficulties------', this.difficulties);
 				} catch (error) {
-					console.error('[Tasks] 从localStorage加载难度失败:', error)
+					console.error('[Tasks] 从CategoryManager加载难度失败:', error)
 					this.difficulties = []
 				}
 			},
@@ -816,7 +514,25 @@
 			async loadTasks() {
 				uni.showLoading({ title: '加载中...' })
 				try {
-					const result = await feishuRequest.queryRecords('任务表')
+					// 构建筛选条件
+					const filter = {}
+					
+					// 儿童筛选
+					if (this.filterChildId) {
+						filter.child_id = this.filterChildId
+					}
+					
+					// 类型筛选
+					if (this.filterTypeId) {
+						filter.type = this.filterTypeId
+					}
+					
+					// 开始时间筛选（使用数组格式）
+					if (this.filterStartTime) {
+						filter.start_time = ["ExactDate", this.filterStartTime.toString()]
+					}
+					
+					const result = await feishuRequest.queryRecords('任务表', filter)
 					
 					if (result.success && result.data && result.data.length > 0) {
 						this.tasks = result.data.map(item => {
@@ -1102,6 +818,31 @@
 		display: flex;
 		flex-direction: column;
 		gap: 20rpx;
+		min-height: 400rpx;
+	}
+
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 100rpx 40rpx;
+	}
+
+	.empty-icon {
+		font-size: 120rpx;
+		margin-bottom: 30rpx;
+	}
+
+	.empty-text {
+		font-size: 32rpx;
+		color: #999;
+		margin-bottom: 15rpx;
+	}
+
+	.empty-hint {
+		font-size: 26rpx;
+		color: #ccc;
 	}
 
 	.task-card {
@@ -1226,137 +967,4 @@
 		font-size: 24rpx;
 	}
 
-	.modal-overlay {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background-color: rgba(0, 0, 0, 0.5);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 1000;
-		padding: 40rpx;
-	}
-
-	.modal-content {
-		width: 100%;
-		max-width: 640rpx;
-		background-color: #fff;
-		border-radius: 20rpx;
-		overflow: hidden;
-		max-height: 80vh;
-		overflow-y: auto;
-	}
-
-	.modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 30rpx;
-		border-bottom: 1rpx solid #f0f0f0;
-		position: sticky;
-		top: 0;
-		background-color: #fff;
-	}
-
-	.modal-title {
-		font-size: 32rpx;
-		font-weight: bold;
-		color: #333;
-	}
-
-	.modal-close {
-		font-size: 36rpx;
-		color: #999;
-		padding: 10rpx;
-	}
-
-	.modal-body {
-		padding: 30rpx;
-	}
-
-	.form-item {
-		margin-bottom: 25rpx;
-	}
-
-	.form-label {
-		font-size: 26rpx;
-		color: #666;
-		display: block;
-		margin-bottom: 10rpx;
-	}
-
-	.form-input {
-		width: 100%;
-		height: 80rpx;
-		padding: 0 20rpx;
-		border: 2rpx solid #e8e8e8;
-		border-radius: 10rpx;
-		font-size: 28rpx;
-		box-sizing: border-box;
-	}
-
-	.form-textarea {
-		width: 100%;
-		height: 150rpx;
-		padding: 20rpx;
-		border: 2rpx solid #e8e8e8;
-		border-radius: 10rpx;
-		font-size: 28rpx;
-		box-sizing: border-box;
-	}
-
-	.template-switch, .audit-switch {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 10rpx 0;
-	}
-
-	.form-picker {
-		width: 100%;
-		height: 80rpx;
-		padding: 0 20rpx;
-		border: 2rpx solid #e8e8e8;
-		border-radius: 10rpx;
-		font-size: 28rpx;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		color: #333;
-	}
-
-	.picker-arrow {
-		font-size: 32rpx;
-		color: #999;
-	}
-
-	.modal-footer {
-		display: flex;
-		gap: 20rpx;
-		padding: 20rpx 30rpx 30rpx;
-		position: sticky;
-		bottom: 0;
-		background-color: #fff;
-	}
-
-	.btn {
-		flex: 1;
-		height: 80rpx;
-		border-radius: 40rpx;
-		font-size: 30rpx;
-		border: none;
-
-		&.btn-primary {
-			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-			color: #fff;
-		}
-
-		&.btn-secondary {
-			background-color: #f0f0f0;
-			color: #333;
-		}
-	}
-</style>
+	</style>

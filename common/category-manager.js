@@ -158,6 +158,107 @@ class CategoryManager {
   }
 
   /**
+   * 获取分类字段数据（兼容两种格式）
+   * @param {string} fieldName - 字段名
+   * @returns {Array} - 字段值数组
+   */
+  static getCategoryField(fieldName) {
+    const categories = this.getCategories()
+    if (!categories) return []
+    
+    // 兼容格式化后的格式 { task_type: [...], ... }
+    if (categories[fieldName] && Array.isArray(categories[fieldName])) {
+      return categories[fieldName]
+    }
+    
+    // 兼容原始格式 [{ fields: { task_type: [...] }, record_id: "..." }]
+    if (Array.isArray(categories) && categories.length > 0 && 
+        categories[0].fields && categories[0].fields[fieldName] && 
+        Array.isArray(categories[0].fields[fieldName])) {
+      return categories[0].fields[fieldName]
+    }
+    
+    return []
+  }
+
+  /**
+   * 获取任务类型选项（用于 uni-data-select）
+   * @returns {Array} - 任务类型选项数组，格式为 [{ value: '', text: '' }]
+   */
+  static getTaskTypeOptions() {
+    const options = [{ value: 'all', text: '全部' }]
+    
+    const taskTypes = this.getCategoryField('task_type')
+    console.log('任务类型选项---start',taskTypes);
+    
+    if (taskTypes.length > 0) {
+      const types = taskTypes.map(t => {
+        if (typeof t === 'string') return t
+        return t.value || t.label || t.text || ''
+      }).filter(Boolean)
+      
+      types.forEach(type => {
+        options.push({
+          value: type,
+          text: type
+        })
+      })
+    }
+        console.log('任务类型选项---start',options);
+
+    return options
+  }
+
+  /**
+   * 获取任务类型列表（纯数组格式）
+   * @returns {Array} - 任务类型字符串数组
+   */
+  static getTaskTypes() {
+    const taskTypes = this.getCategoryField('task_type')
+    return taskTypes.map(t => {
+      if (typeof t === 'string') return t
+      return t.value || t.label || t.text || ''
+    }).filter(Boolean)
+  }
+
+  /**
+   * 获取难度选项（用于 uni-data-select）
+   * @returns {Array} - 难度选项数组，格式为 [{ value: '', text: '' }]
+   */
+  static getDifficultyOptions() {
+    const options = []
+    const difficulties = this.getCategoryField('task_difficulty')
+    
+    if (difficulties.length > 0) {
+      const diffs = difficulties.map(d => {
+        if (typeof d === 'string') return d
+        return d.value || d.label || d.text || ''
+      }).filter(Boolean)
+      
+      diffs.forEach(diff => {
+        options.push({
+          value: diff,
+          text: diff
+        })
+      })
+    }
+    
+    return options
+  }
+
+  /**
+   * 获取难度列表（纯数组格式）
+   * @returns {Array} - 难度字符串数组
+   */
+  static getDifficulties() {
+    const difficulties = this.getCategoryField('task_difficulty')
+    return difficulties.map(d => {
+      if (typeof d === 'string') return d
+      return d.value || d.label || d.text || ''
+    }).filter(Boolean)
+  }
+
+  /**
    * 清除分类缓存
    */
   static clearCache() {

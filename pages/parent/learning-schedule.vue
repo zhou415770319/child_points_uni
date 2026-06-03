@@ -213,10 +213,12 @@
 				}
 			},
 			onDayStatusChange(e) {
-				this.currentDayStatus = e.detail.value
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.currentDayStatus = value
 			},
 			updateSlotTime(slotIndex, field, e) {
-				this.timeSlots[slotIndex][field] = e.detail.value
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.timeSlots[slotIndex][field] = value
 			},
 			addSlot() {
 				this.timeSlots.push({
@@ -231,10 +233,12 @@
 				}
 			},
 			onAutoScheduleChange(e) {
-				this.autoSchedule = e.detail.value
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.autoSchedule = value
 			},
 			onReminderChange(e) {
-				this.reminderEnabled = e.detail.value
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.reminderEnabled = value
 			},
 			getDayStatus(index) {
 				if (this.scheduleData[`day_${index}_status`] === 1) return 'activity'

@@ -216,10 +216,12 @@
 				this.closeCozeModal()
 			},
 			onTaskCountChange(e) {
-				this.taskCountIndex = e.detail.value
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.taskCountIndex = value
 			},
 			onDifficultyChange(e) {
-				this.difficultyIndex = e.detail.value
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.difficultyIndex = value
 			},
 			async generateTasks() {
 				if (!this.aiPrompt.trim()) {

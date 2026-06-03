@@ -89,14 +89,10 @@
 					</view>
 					<view class="form-item">
 						<text class="form-label">商品分类</text>
-						<CustomPicker 
-							:options="categories" 
-							v-model="categoryIndex" 
-							:title="'选择商品分类'" 
-							:placeholder="'请选择分类'"
-							:auto-select-first="false"
-							label-field="name"
-							value-field="id"
+						<uni-data-select 
+							v-model="formData.category" 
+							:localdata="categoryUniOptions" 
+							placeholder="请选择分类"
 							@change="onCategoryChange"
 						/>
 					</view>
@@ -114,14 +110,10 @@
 					</view>
 					<view class="form-item">
 						<text class="form-label">商品状态</text>
-						<CustomPicker 
-							:options="giftStatuses" 
-							v-model="statusIndex" 
-							:title="'选择商品状态'" 
-							:placeholder="'请选择状态'"
-							:auto-select-first="false"
-							label-field="name"
-							value-field="id"
+						<uni-data-select 
+							v-model="formData.status" 
+							:localdata="statusUniOptions" 
+							placeholder="请选择状态"
 							@change="onStatusChange"
 						/>
 					</view>
@@ -138,9 +130,8 @@
 <script>
 	import { feishuRequest } from '@/common/feishu-request.js'
 	import CacheManager from '@/common/cache-manager.js'
-	import CustomPicker from '@/components/CustomPicker.vue'
 	export default {
-		components: { CustomPicker },
+		components: {},
 		data() {
 			return {
 				goods: [],
@@ -171,8 +162,6 @@
 					stock: '',
 					status: ''
 				},
-				categoryIndex: -1,
-				statusIndex: -1,
 				uploadedImage: '',
 				imageFileToken: ''
 			}
@@ -185,6 +174,20 @@
 					result = result.filter(g => g.name.toLowerCase().includes(keyword))
 				}
 				return result
+			},
+			// 分类选项（用于uni-data-select）
+			categoryUniOptions() {
+				return this.categories.map(c => ({
+					value: c.id,
+					text: c.name
+				}))
+			},
+			// 状态选项（用于uni-data-select）
+			statusUniOptions() {
+				return this.giftStatuses.map(s => ({
+					value: s.id,
+					text: s.name
+				}))
 			}
 		},
 		methods: {
@@ -230,8 +233,6 @@
 					stock: good.stock.toString(),
 					status: good.status
 				}
-				this.categoryIndex = this.categories.findIndex(c => c.id === good.category || c.name === good.category)
-				this.statusIndex = this.giftStatuses.findIndex(s => s.id === good.status || s.name === good.status)
 				this.showAddModal = true
 			},
 			deleteGoods(good) {
@@ -258,13 +259,13 @@
 					}
 				})
 			},
-			onCategoryChange(index, option) {
-				this.categoryIndex = index
-				this.formData.category = option ? option.id : ''
+			onCategoryChange(e) {
+				const value = e?.detail?.value || e
+				this.formData.category = value || ''
 			},
-			onStatusChange(index, option) {
-				this.statusIndex = index
-				this.formData.status = option ? option.id : ''
+			onStatusChange(e) {
+				const value = e?.detail?.value || e
+				this.formData.status = value || ''
 			},
 			closeModal() {
 				this.showAddModal = false
@@ -278,8 +279,6 @@
 					stock: '',
 					status: ''
 				}
-				this.categoryIndex = -1
-				this.statusIndex = -1
 				this.uploadedImage = ''
 				this.imageFileToken = ''
 			},

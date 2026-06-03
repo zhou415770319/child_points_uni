@@ -1,145 +1,156 @@
 <template>
-	<view class="custom-picker" @click="showPicker">
-		<view class="picker-content">
-			<text class="picker-value">{{ currentValue || placeholder }}</text>
-			<text class="picker-arrow">›</text>
+	<view class="custom-picker-container">
+		<view class="custom-picker" @tap="togglePicker">
+			<text class="picker-value">{{ displayValue || placeholder }}</text>
+			<text class="picker-arrow" :class="{ active: showPicker }">▼</text>
 		</view>
-		<!-- 选择器弹窗 -->
-		<view class="picker-overlay" v-if="show" @click="closePicker">
-			<view class="picker-modal" @click.stop>
-				<view class="picker-header">
-					<text class="picker-title">{{ title || '请选择' }}</text>
-					<text class="picker-close" @click="closePicker">✕</text>
-				</view>
-				<view class="picker-body">
-					<view 
-						v-for="(option, index) in options" 
-						:key="index" 
-						class="picker-item"
-						:class="{ 'picker-item-active': currentIndex === index }"
-						@click="selectOption(index)"
-					>
-						{{ typeof option === 'object' ? option[this.labelField] : option }}
-						<text v-if="currentIndex === index" class="picker-check">✓</text>
-					</view>
-				</view>
+		
+		<view class="picker-overlay" v-if="showPicker" @tap="closePicker"></view>
+		
+		<view class="picker-popup" v-if="showPicker">
+			<view class="picker-header">
+				<text class="picker-title">{{ title }}</text>
+				<text class="picker-close" @tap="closePicker">✕</text>
 			</view>
+			<scroll-view class="picker-content" scroll-y>
+				<view 
+					class="picker-item" 
+					v-for="(item, index) in options" 
+					:key="index"
+					:class="{ active: index === selectedIndex }"
+					@tap="selectItem(index)"
+				>
+					<text class="item-text">{{ typeof item === 'object' ? (item.label || item.text || item.value) : item }}</text>
+					<text class="item-check" v-if="index === selectedIndex">✓</text>
+				</view>
+			</scroll-view>
 		</view>
 	</view>
 </template>
 
 <script>
-export default {
-	name: 'CustomPicker',
-	props: {
-		// 选项列表，可以是字符串数组或对象数组
-		options: {
-			type: Array,
-			default: () => []
-		},
-		// 当前选中的索引
-		modelValue: {
-			type: Number,
-			default: -1
-		},
-		// 占位符文本
-		placeholder: {
-			type: String,
-			default: '请选择'
-		},
-		// 标题
-		title: {
-			type: String,
-			default: ''
-		},
-		// 是否自动选择第一项
-		autoSelectFirst: {
-			type: Boolean,
-			default: true
-		},
-		// 显示文本的字段名（支持 label, name, text 等）
-		labelField: {
-			type: String,
-			default: 'label'
-		},
-		// 值字段名（支持 value, id 等）
-		valueField: {
-			type: String,
-			default: 'value'
-		}
-	},
-	data() {
-		return {
-			show: false,
-			currentIndex: -1
-		}
-	},
-	computed: {
-		currentValue() {
-			if (this.currentIndex >= 0 && this.currentIndex < this.options.length) {
-				const option = this.options[this.currentIndex]
-				return typeof option === 'object' ? option[this.labelField] : option
-			}
-			return ''
-		}
-	},
-	watch: {
-		modelValue: {
-			handler(newVal) {
-				this.currentIndex = newVal
+	export default {
+		name: 'CustomPicker',
+		props: {
+			options: {
+				type: Array,
+				default: () => []
 			},
-			immediate: true
+			value: {
+				type: [String, Number],
+				default: ''
+			},
+			placeholder: {
+				type: String,
+				default: '请选择'
+			},
+			title: {
+				type: String,
+				default: '选择'
+			}
 		},
-		options: {
-			handler(newOptions) {
-				// 如果启用了自动选择第一项，且当前没有选中项，则自动选中第一项
-				if (this.autoSelectFirst && newOptions.length > 0 && this.currentIndex === -1) {
-					this.currentIndex = 0
-					this.$emit('update:modelValue', 0)
+		data() {
+			return {
+				showPicker: false,
+				selectedIndex: -1
+			}
+		},
+		computed: {
+			displayValue() {
+				if (this.selectedIndex >= 0 && this.selectedIndex < this.options.length) {
+					const item = this.options[this.selectedIndex]
+					return typeof item === 'object' ? (item.label || item.text || item.value) : item
+				}
+				return ''
+			}
+		},
+		watch: {
+			value: {
+				immediate: true,
+				handler(newVal) {
+					if (newVal !== undefined && newVal !== null && newVal !== '') {
+						this.selectedIndex = this.options.findIndex(item => {
+							if (typeof item === 'object') {
+								return item.value === newVal || item.label === newVal || item.text === newVal
+							}
+							return item === newVal
+						})
+					}
 				}
 			},
-			immediate: true
-		}
-	},
-	methods: {
-		showPicker() {
-			this.show = true
+			options: {
+				immediate: true,
+				handler() {
+					if (this.value) {
+						this.selectedIndex = this.options.findIndex(item => {
+							if (typeof item === 'object') {
+								return item.value === this.value || item.label === this.value || item.text === this.value
+							}
+							return item === this.value
+						})
+					}
+				}
+			}
 		},
-		closePicker() {
-			this.show = false
-		},
-		selectOption(index) {
-			this.currentIndex = index
-			this.$emit('update:modelValue', index)
-			this.$emit('change', index, this.options[index])
-			this.closePicker()
+		methods: {
+			togglePicker() {
+				this.showPicker = !this.showPicker
+			},
+			closePicker() {
+				this.showPicker = false
+			},
+			selectItem(index) {
+				this.selectedIndex = index
+				const item = this.options[index]
+				const value = typeof item === 'object' ? (item.value || item.label || item.text) : item
+				this.$emit('input', value)
+				this.$emit('change', { index, value, item })
+				this.closePicker()
+			}
 		}
 	}
-}
 </script>
 
 <style lang="scss" scoped>
-.custom-picker {
-	.picker-content {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
+	.custom-picker-container {
+		position: relative;
+		width: 100%;
+	}
+
+	.custom-picker {
+		width: 100%;
 		height: 80rpx;
 		padding: 0 20rpx;
 		border: 2rpx solid #e8e8e8;
 		border-radius: 10rpx;
+		font-size: 28rpx;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		color: #333;
 		background-color: #fff;
+
+		&:active {
+			background-color: #f5f5f5;
+		}
 	}
 
 	.picker-value {
 		flex: 1;
-		font-size: 28rpx;
-		color: #333;
+		text-align: left;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.picker-arrow {
-		font-size: 32rpx;
+		font-size: 20rpx;
 		color: #999;
+		transition: transform 0.2s ease;
+
+		&.active {
+			transform: rotate(180deg);
+		}
 	}
 
 	.picker-overlay {
@@ -149,26 +160,31 @@ export default {
 		right: 0;
 		bottom: 0;
 		background-color: rgba(0, 0, 0, 0.5);
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
-		z-index: 1001;
+		z-index: 999;
 	}
 
-	.picker-modal {
-		width: 100%;
+	.picker-popup {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
 		background-color: #fff;
 		border-radius: 20rpx 20rpx 0 0;
+		z-index: 1000;
 		max-height: 60vh;
-		overflow: hidden;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.picker-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: 30rpx;
+		padding: 25rpx 30rpx;
 		border-bottom: 1rpx solid #f0f0f0;
+		background-color: #fff;
+		position: sticky;
+		top: 0;
 	}
 
 	.picker-title {
@@ -183,33 +199,40 @@ export default {
 		padding: 10rpx;
 	}
 
-	.picker-body {
-		max-height: 400rpx;
-		overflow-y: auto;
+	.picker-content {
+		flex: 1;
+		max-height: 50vh;
 	}
 
 	.picker-item {
 		display: flex;
-		justify-content: space-between;
 		align-items: center;
-		padding: 30rpx;
-		font-size: 30rpx;
-		color: #333;
+		justify-content: space-between;
+		padding: 25rpx 30rpx;
 		border-bottom: 1rpx solid #f5f5f5;
 
 		&:active {
-			background-color: #f5f5f5;
+			background-color: #f8f9fa;
+		}
+
+		&.active {
+			background-color: #e8f4ff;
+
+			.item-text {
+				color: #667eea;
+				font-weight: bold;
+			}
 		}
 	}
 
-	.picker-item-active {
-		background-color: #f0f5ff;
-		color: #667eea;
+	.item-text {
+		font-size: 30rpx;
+		color: #333;
 	}
 
-	.picker-check {
-		font-size: 32rpx;
+	.item-check {
+		font-size: 28rpx;
 		color: #667eea;
+		font-weight: bold;
 	}
-}
 </style>

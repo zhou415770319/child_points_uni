@@ -166,7 +166,8 @@
 				this.selectedChild = childId
 			},
 			onPeriodChange(e) {
-				this.periodIndex = e.detail.value
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.periodIndex = value
 			}
 		},
 		onLoad() {

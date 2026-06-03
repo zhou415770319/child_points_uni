@@ -49,15 +49,15 @@
 						<input class="form-input" type="number" v-model="formData.age" placeholder="请输入年龄" />
 					</view>
 					
-					<!-- 年级选择：使用select下拉框 -->
+					<!-- 年级选择：使用picker组件 -->
 					<view class="form-item">
 						<text class="form-label">年级</text>
-						<view class="form-select-wrapper">
-							<select class="form-select" v-model="formData.grade">
-								<option value="" disabled>请选择年级</option>
-								<option v-for="grade in grades" :key="grade" :value="grade">{{ grade }}</option>
-							</select>
-						</view>
+						<picker mode="selector" :range="grades" @change="onGradeChange">
+							<view class="form-picker">
+								{{ formData.grade || '请选择年级' }}
+								<text class="picker-arrow">›</text>
+							</view>
+						</picker>
 					</view>
 					
 					<!-- 爱好选择：点击弹出多选弹窗 -->
@@ -255,6 +255,14 @@
 					hobby: Array.isArray(child.hobby) ? child.hobby : []
 				}
 				this.showAddModal = true
+			},
+			/**
+			 * 年级选择器变更事件
+			 * @param {Object} e - 选择器事件对象
+			 */
+			onGradeChange(e) {
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.formData.grade = this.grades[value]
 			},
 			/**
 			 * 删除儿童（带确认弹窗）

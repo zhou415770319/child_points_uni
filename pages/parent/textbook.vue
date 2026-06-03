@@ -6,22 +6,24 @@
 		</view>
 
 		<view class="filter-section">
-			<view class="filter-item">
-				<text class="filter-label">儿童：</text>
-				<picker :value="childIndex" :range="childNames" @change="onChildChange">
-					<view class="filter-picker">
-						{{ currentChildName || '全部' }}
-						<text class="picker-arrow">›</text>
-					</view>
-				</picker>
+			<view class="filter-row">
+				<view class="filter-item">
+					<text class="filter-label">儿童：</text>
+					<uni-data-select
+						v-model="selectedChildId"
+						:localdata="filterChildOptions"
+						placeholder="全部"
+					/>
+				</view>
+				<view class="filter-item">
+					<text class="filter-label">科目：</text>
+					<uni-data-select
+						v-model="currentFilter"
+						:localdata="subjectFilterOptions"
+						placeholder="全部"
+					/>
+				</view>
 			</view>
-		</view>
-
-		<view class="toolbar">
-			<button class="toolbar-btn" :class="{ active: currentFilter === 'all' }" @click="setFilter('all')">全部</button>
-			<button class="toolbar-btn" :class="{ active: currentFilter === '语文' }" @click="setFilter('语文')">语文</button>
-			<button class="toolbar-btn" :class="{ active: currentFilter === '数学' }" @click="setFilter('数学')">数学</button>
-			<button class="toolbar-btn" :class="{ active: currentFilter === '英语' }" @click="setFilter('英语')">英语</button>
 		</view>
 
 		<view class="book-list">
@@ -52,6 +54,11 @@
 					<text class="action-btn edit" :class="{ disabled: book.status === '开启' }" @click.stop="editBook(book)">✏️</text>
 					<text class="action-btn toggle" @click.stop="toggleBookStatus(book)">{{ book.status === '开启' ? '⏸️' : '▶️' }}</text>
 				</view>
+			</view>
+			<view v-if="filteredBooks.length === 0" class="empty-state">
+				<text class="empty-icon">📚</text>
+				<text class="empty-text">暂无教材数据</text>
+				<text class="empty-hint">点击右上角按钮添加新教材</text>
 			</view>
 		</view>
 
@@ -92,27 +99,19 @@
 					</view>
 					<view class="form-item">
 						<text class="form-label">绑定儿童</text>
-						<CustomPicker 
-							:options="childOptions" 
-							v-model="formChildIndex" 
-							:title="'选择儿童'" 
-							:placeholder="'请选择儿童'"
-							:auto-select-first="false"
-							label-field="name"
-							value-field="id"
+						<uni-data-select 
+							v-model="formData.child_id" 
+							:localdata="childUniOptions" 
+							placeholder="请选择儿童"
 							@change="onFormChildChange"
 						/>
 					</view>
 					<view class="form-item">
 						<text class="form-label">科目</text>
-						<CustomPicker 
-							:options="subjectOptions" 
-							v-model="formSubjectIndex" 
-							:title="'选择科目'" 
-							:placeholder="'请选择科目'"
-							:auto-select-first="false"
-							label-field="name"
-							value-field="id"
+						<uni-data-select 
+							v-model="formData.subject" 
+							:localdata="subjectUniOptions" 
+							placeholder="请选择科目"
 							@change="onFormSubjectChange"
 						/>
 					</view>
@@ -129,8 +128,19 @@
 						<input class="form-input" type="number" v-model="formData.pages_per_task" placeholder="每次任务学习页数" />
 					</view>
 					<view class="form-item">
-						<text class="form-label">资源链接</text>
-						<input class="form-input" v-model="formData.resource_url" placeholder="绑定相关资源地址，如纪录片、视频链接等" />
+						<view class="form-label-row">
+							<text class="form-label">资源链接</text>
+							<text class="form-hint">每行一个链接</text>
+						</view>
+						<textarea 
+							class="form-textarea" 
+							v-model="formData.resource_url" 
+							placeholder="支持输入多个资源链接，每行一个。&#10;可以是视频链接、文档链接等..."
+							:maxlength="1000"
+						></textarea>
+						<view class="form-textarea-footer">
+							<text class="link-count">{{ linkList.length }} 个链接</text>
+						</view>
 					</view>
 				</view>
 				<view class="modal-footer">
@@ -145,15 +155,14 @@
 <script>
 	import { feishuRequest } from '@/common/feishu-request.js'
 	import CacheManager from '@/common/cache-manager.js'
-	import CustomPicker from '@/components/CustomPicker.vue'
+	import CategoryManager from '@/common/category-manager.js'
 	export default {
-		components: { CustomPicker },
+		components: {},
 		data() {
 			return {
 				books: [],
 				currentFilter: 'all',
 				selectedChildId: '',
-				childIndex: -1,
 				children: [],
 				subjectList: [],
 				showAddModal: false,
@@ -176,37 +185,63 @@
 			}
 		},
 		computed: {
-			childNames() {
-				return ['全部', ...this.children.map(c => c.name)]
-			},
 			childOptions() {
 				return this.children.map(c => ({ id: c.child_id, name: c.name }))
+			},
+			// 儿童选项（用于uni-data-select）
+			childUniOptions() {
+				return this.children.map(c => ({
+					value: c.child_id,
+					text: c.name
+				}))
+			},
+			// 筛选儿童选项（包含全部选项）
+			filterChildOptions() {
+				return [{
+					value: '',
+					text: '全部'
+				}, ...this.children.map(c => ({
+					value: c.child_id,
+					text: c.name
+				}))]
 			},
 			subjectOptions() {
 				return this.subjectList.map(s => ({ id: s, name: s }))
 			},
-			currentChildName() {
-				if (this.childIndex <= 0) return ''
-				return this.children[this.childIndex - 1]?.name || ''
+			// 科目选项（用于uni-data-select）
+			subjectUniOptions() {
+				return this.subjectList.map(s => ({
+					value: s,
+					text: s
+				}))
+			},
+			// 科目筛选选项（从CategoryManager获取）
+			subjectFilterOptions() {
+				return CategoryManager.getTaskTypeOptions()
 			},
 			filteredBooks() {
-				let result = this.books
-				
-				if (this.selectedChildId) {
-					result = result.filter(book => book.child_id === this.selectedChildId)
+				return this.books
+			},
+			// 解析资源链接列表
+			linkList() {
+				if (!this.formData.resource_url) {
+					return []
 				}
-				
-				if (this.currentFilter !== 'all') {
-					result = result.filter(book => book.subject === this.currentFilter)
-				}
-				
-				return result
+				return this.formData.resource_url.split('\n').filter(item => item.trim())
 			}
 		},
 		onLoad() {
 			this.loadChildren()
 			this.loadSubjects()
 			this.loadBooks()
+		},
+		watch: {
+			selectedChildId() {
+				this.loadBooks()
+			},
+			currentFilter() {
+				this.loadBooks()
+			}
 		},
 		methods: {
 			async loadChildren() {
@@ -235,41 +270,9 @@
 			},
 			async loadSubjects() {
 				try {
-					const categoryCacheKey = 'categories'
-					let cachedCategories = CacheManager.getCache(categoryCacheKey)
-					
-					if (cachedCategories && Array.isArray(cachedCategories)) {
-						console.log('[Textbook] 使用缓存的分类数据')
-						const firstItem = cachedCategories[0]
-						if (firstItem && firstItem.fields && firstItem.fields.task_type) {
-							const taskTypeField = firstItem.fields.task_type
-							if (Array.isArray(taskTypeField)) {
-								this.subjectList = taskTypeField.map(s => {
-									if (typeof s === 'string') return s
-									return s.value || s.label || ''
-								}).filter(Boolean)
-							}
-						}
-					}
-					
-					if (!this.subjectList || this.subjectList.length === 0) {
-						console.log('[Textbook] 从飞书多维表格加载分类数据')
-						const result = await feishuRequest.queryRecords('分类表')
-						if (result.success && result.data && result.data.length > 0) {
-							const item = result.data[0]
-							CacheManager.setCache(categoryCacheKey, result.data)
-							
-							if (item.fields.task_type) {
-								const taskTypeField = item.fields.task_type
-								if (Array.isArray(taskTypeField)) {
-									this.subjectList = taskTypeField.map(s => {
-										if (typeof s === 'string') return s
-										return s.value || s.label || ''
-									}).filter(Boolean)
-								}
-							}
-						}
-					}
+					console.log('[Textbook] 使用 CategoryManager 加载科目列表')
+					await CategoryManager.loadCategories('textbook')
+					this.subjectList = CategoryManager.getTaskTypes()
 					
 					if (!this.subjectList || this.subjectList.length === 0) {
 						this.subjectList = ['语文', '数学', '英语', '科学', '美术', '音乐']
@@ -305,25 +308,13 @@
 				}
 				return ''
 			},
-			setFilter(filter) {
-				this.currentFilter = filter
+			onFormChildChange(e) {
+				const value = e?.detail?.value || e
+				this.formData.child_id = value || ''
 			},
-			onChildChange(e) {
-				this.childIndex = e.detail.value
-				if (this.childIndex === 0) {
-					this.selectedChildId = ''
-				} else {
-					const child = this.children[this.childIndex - 1]
-					this.selectedChildId = child?.child_id || ''
-				}
-			},
-			onFormChildChange(index, option) {
-				this.formChildIndex = index
-				this.formData.child_id = option ? option.id : ''
-			},
-			onFormSubjectChange(index, option) {
-				this.formSubjectIndex = index
-				this.formData.subject = option ? option.id : ''
+			onFormSubjectChange(e) {
+				const value = e?.detail?.value || e
+				this.formData.subject = value || ''
 			},
 			/* 教材图片上传功能暂未启用
 			chooseImage() {
@@ -363,7 +354,16 @@
 			async loadBooks() {
 				uni.showLoading({ title: '加载中...' })
 				try {
-					const result = await feishuRequest.queryRecords('教材表')
+					// 构建筛选条件
+					const filter = {}
+					if (this.selectedChildId) {
+						filter.child_id = this.selectedChildId
+					}
+					if (this.currentFilter && this.currentFilter !== 'all') {
+						filter.subject = this.currentFilter
+					}
+					
+					const result = await feishuRequest.queryRecords('教材表', filter)
 					if (result.success && result.data && result.data.length > 0) {
 						this.books = result.data.map(item => {
 							const name = this.parseTextField(item.fields.name)
@@ -430,9 +430,6 @@
 					image: book.image,
 					status: book.status
 				}
-				
-				this.formChildIndex = this.children.findIndex(c => c.child_id === book.child_id)
-				this.formSubjectIndex = this.subjectList.findIndex(s => s === book.subject)
 				// this.uploadedImage = book.image
 				this.showAddModal = true
 			},
@@ -480,8 +477,6 @@
 					image: '',
 					status: '开启'
 				}
-				this.formChildIndex = -1
-				this.formSubjectIndex = -1
 				// this.uploadedImage = ''
 				// this.imageFileToken = ''
 			},
@@ -591,7 +586,13 @@
 		border-bottom: 1rpx solid #f0f0f0;
 	}
 
+	.filter-row {
+		display: flex;
+		gap: 30rpx;
+	}
+
 	.filter-item {
+		flex: 1;
 		display: flex;
 		align-items: center;
 	}
@@ -889,6 +890,43 @@
 		box-sizing: border-box;
 	}
 
+	.form-label-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 10rpx;
+	}
+
+	.form-hint {
+		font-size: 22rpx;
+		color: #999;
+	}
+
+	.form-textarea {
+		width: 100%;
+		height: 200rpx;
+		padding: 20rpx;
+		border: 2rpx solid #e8e8e8;
+		border-radius: 10rpx;
+		font-size: 26rpx;
+		box-sizing: border-box;
+		resize: none;
+		background-color: #fafafa;
+		line-height: 1.6;
+	}
+
+	.form-textarea-footer {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: 8rpx;
+	}
+
+	.link-count {
+		font-size: 22rpx;
+		color: #4caf50;
+		font-weight: 500;
+	}
+
 	.image-upload {
 		width: 100%;
 		height: 200rpx;
@@ -947,5 +985,31 @@
 			background-color: #f0f0f0;
 			color: #333;
 		}
+	}
+
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 100rpx 40rpx;
+		background-color: #fff;
+		border-radius: 16rpx;
+	}
+
+	.empty-icon {
+		font-size: 80rpx;
+		margin-bottom: 20rpx;
+	}
+
+	.empty-text {
+		font-size: 30rpx;
+		color: #666;
+		margin-bottom: 10rpx;
+	}
+
+	.empty-hint {
+		font-size: 24rpx;
+		color: #999;
 	}
 </style>

@@ -87,11 +87,21 @@ function buildFilter(filter) {
 	const conditions = []
 	for (const key in filter) {
 		const value = filter[key]
-		conditions.push({
-			field_name: key,
-			operator: "is",
-			value: [value]
-		})
+		
+		// 如果值已经是数组（如日期筛选 ["ExactDate", "时间戳"]），直接使用
+		if (Array.isArray(value)) {
+			conditions.push({
+				field_name: key,
+				operator: "is",
+				value: value
+			})
+		} else {
+			conditions.push({
+				field_name: key,
+				operator: "is",
+				value: [value]
+			})
+		}
 	}
 	return {
 		conjunction: "and",
