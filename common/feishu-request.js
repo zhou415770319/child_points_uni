@@ -177,6 +177,19 @@ class FeishuRequest {
 			const tableId = this.getTableIdByName(tableName)
 			
 			await this.initCloudObject()
+			
+			// 如果有 keyword 参数，使用模糊搜索
+			if (filter && filter.keyword) {
+				return this.feishutools.searchRecords({
+					baseToken: this.baseToken,
+					tableId: tableId,
+					tableName: tableName,
+					keyword: filter.keyword,
+					pageSize: options.pageSize,
+					pageToken: options.pageToken
+				})
+			}
+			
 			return this.feishutools.queryRecords({
 				baseToken: this.baseToken,
 				tableId: tableId,
@@ -187,6 +200,38 @@ class FeishuRequest {
 		} catch (error) {
 			console.error('[FeishuRequest] 查询记录失败，尝试使用mock数据:', error.message)
 			return this.getMockData(tableName, filter, options)
+		}
+	}
+	
+	/**
+	 * 模糊搜索记录
+	 * @param {string} tableName - 表名
+	 * @param {string} keyword - 搜索关键词
+	 * @param {Object} options - 查询选项
+	 * @returns {Promise<Object>} 查询结果
+	 */
+	async searchRecords(tableName, keyword, options = {}) {
+		console.log('[FeishuRequest] 模糊搜索记录，表名:', tableName, '关键词:', keyword)
+		
+		if (USE_MOCK) {
+			return this.getMockData(tableName, { keyword }, options)
+		}
+		
+		try {
+			this.getConfig()
+			const tableId = this.getTableIdByName(tableName)
+			
+			await this.initCloudObject()
+			return this.feishutools.searchRecords({
+				baseToken: this.baseToken,
+				tableId: tableId,
+				keyword: keyword,
+				pageSize: options.pageSize,
+				pageToken: options.pageToken
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 模糊搜索失败，尝试使用mock数据:', error.message)
+			return this.getMockData(tableName, { keyword }, options)
 		}
 	}
 	
@@ -252,7 +297,35 @@ class FeishuRequest {
 					const filterValue = filter[key]
 					const itemValue = item.fields[key]
 					
-					if (key === 'child_id') {
+					if (key === 'keyword') {
+						// 根据不同表名搜索不同字段
+						let match = false
+						let searchFields = ['name'] // 默认搜索name字段
+						
+						if (tableName === '任务模板表') {
+							searchFields = ['template_title']
+						} else if (tableName === '任务表') {
+							searchFields = ['title']
+						} else if (tableName === '教材表') {
+							searchFields = ['name']
+						}
+						
+						searchFields.forEach(field => {
+							const fieldValue = item.fields[field]
+							if (fieldValue) {
+								let textValue = ''
+								if (Array.isArray(fieldValue) && fieldValue[0] && fieldValue[0].text) {
+									textValue = fieldValue[0].text
+								} else if (typeof fieldValue === 'string') {
+									textValue = fieldValue
+								}
+								if (textValue.toLowerCase().includes(filterValue.toLowerCase())) {
+									match = true
+								}
+							}
+						})
+						if (!match) return false
+					} else if (key === 'child_id') {
 						const childId = this.normalizeChildId(itemValue)
 						if (childId !== filterValue) return false
 					} else if (key === 'category') {

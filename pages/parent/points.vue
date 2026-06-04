@@ -223,10 +223,18 @@
 				this.loadPointsHistory()
 			},
 			goToHistory() {
-				uni.navigateTo({ url: '/pages/parent/points-history' })
+				uni.navigateTo({ url: '/pages/child/points-history' })
 			},
 			goToRules() {
-				uni.showToast({ title: '积分规则功能开发中', icon: 'none' })
+				// #ifdef H5
+				const iframe = document.createElement('iframe')
+				iframe.src = 'https://ua7l4cwjpsi.feishu.cn/wiki/ANA2wUJzji5Vh8k9JUjcEzb8n5e'
+				iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;border:none;background:#fff'
+				document.body.appendChild(iframe)
+				// #endif
+				// #ifdef APP-PLUS
+				plus.runtime.openURL('https://ua7l4cwjpsi.feishu.cn/wiki/ANA2wUJzji5Vh8k9JUjcEzb8n5e')
+				// #endif
 			},
 			goToMall() {
 				uni.navigateTo({ url: '/pages/parent/mall' })

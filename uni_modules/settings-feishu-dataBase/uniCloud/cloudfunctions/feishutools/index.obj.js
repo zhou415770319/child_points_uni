@@ -306,6 +306,81 @@ async function queryRecords(params) {
 }
 
 /**
+ * 模糊搜索记录（使用contains操作符）
+ */
+async function searchRecords(params) {
+	console.log('[FeishuTools] 模糊搜索记录:', JSON.stringify(params))
+	
+	const { baseToken, tableId, keyword, tableName, pageSize, pageToken } = params
+	
+	if (!baseToken || !tableId || !keyword) {
+		throw new Error('baseToken、tableId和keyword不能为空')
+	}
+	
+	const tokenResult = await getAccessToken()
+	const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${baseToken}/tables/${tableId}/records/search`
+	
+	// 根据不同表名搜索不同字段
+	let searchFields = ['name'] // 默认搜索name字段
+	
+	if (tableName === '任务模板表') {
+		searchFields = ['template_title']
+	} else if (tableName === '任务表') {
+		searchFields = ['title']
+	} else if (tableName === '教材表') {
+		searchFields = ['name']
+	}
+	
+	// 构建模糊搜索条件
+	const conditions = searchFields.map(field => ({
+		field_name: field,
+		operator: "contains",
+		value: [keyword]
+	}))
+	
+	const requestData = {
+		filter: {
+			conjunction: "or",
+			conditions: conditions
+		}
+	}
+	
+	if (pageSize) {
+		requestData.page_size = pageSize
+	}
+	if (pageToken) {
+		requestData.page_token = pageToken
+	}
+	
+	console.log('[FeishuTools] 请求URL:', url)
+	console.log('[FeishuTools] 请求数据:', JSON.stringify(requestData))
+	
+	const response = await uniCloud.httpclient.request(url, {
+		method: 'POST',
+		headers: {
+			'Authorization': 'Bearer ' + tokenResult.accessToken,
+			'Content-Type': 'application/json'
+		},
+		data: requestData,
+		dataType: 'json'
+	})
+	
+	console.log('[FeishuTools] 搜索响应:', JSON.stringify(response.data))
+	
+	if (response.data.code === 0) {
+		return {
+			success: true,
+			data: response.data.data.items,
+			total: response.data.data.total,
+			pageToken: response.data.data.page_token,
+			hasMore: response.data.has_more
+		}
+	} else {
+		throw new Error('搜索失败: ' + JSON.stringify(response.data))
+	}
+}
+
+/**
  * 添加记录
  */
 async function addRecord(params, retryCount = 0) {
@@ -770,6 +845,7 @@ module.exports = {
 	getTableFields,
 	testConnection,
 	queryRecords,
+	searchRecords,
 	addRecord,
 	updateRecord,
 	deleteRecord,

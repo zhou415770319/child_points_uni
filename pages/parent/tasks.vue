@@ -48,10 +48,23 @@
 		<view class="section">
 			<view class="section-header">
 				<text class="section-title">📋 任务列表</text>
-				<button class="add-btn" @click="creatTask">+ 新建任务</button>
+				<view class="header-actions">
+					<button v-if="selectedTasks.length > 0" class="batch-delete-btn" @click="batchDeleteTasks">
+						🗑️ 删除选中({{ selectedTasks.length }})
+					</button>
+					<button v-if="filteredTasks.length > 0" class="select-all-btn" @click="toggleSelectAll">
+						{{ isAllSelected ? '取消全选' : '全选' }}
+					</button>
+					<button class="add-btn" @click="creatTask">+ 新建任务</button>
+				</view>
 			</view>
 			<view class="task-list">
 				<view class="task-card" v-for="task in filteredTasks" :key="task.id">
+					<view class="task-checkbox" @click.stop="toggleSelectTask(task.id)">
+						<view class="checkbox" :class="{ checked: selectedTasks.includes(task.id) }">
+							<text v-if="selectedTasks.includes(task.id)" class="check-icon">✓</text>
+						</view>
+					</view>
 					<view class="task-icon">{{ getTaskIcon(task.type) }}</view>
 					<view class="task-content">
 						<view class="task-header">
@@ -114,6 +127,7 @@
 	import AITaskModal from '@/components/AITaskModal.vue'
 	import UserManager from '@/common/user-manager.js'
 	import { feishuRequest } from '@/common/feishu-request.js'
+	import { cozeRequest } from '@/common/coze-request.js'
 	import CategoryManager from '@/common/category-manager.js'
 	export default {
 		components: { customTabBar, TaskFormModal, AITaskModal },
@@ -133,10 +147,12 @@
 				// 筛选相关
 				filterChildId: '',      // 儿童筛选ID
 				filterTypeId: '',       // 类型筛选值
-				filterStartTime: '',    // 开始时间筛选（时间戳）
+				filterStartTime: new Date().setHours(0, 0, 0, 0),    // 开始时间筛选（时间戳），默认当天
 				// 教材相关
 				textbooks: [],           // 教材列表
-				textbookNames: []        // 教材名称列表
+				textbookNames: [],        // 教材名称列表
+				// 批量删除相关
+				selectedTasks: []        // 选中的任务ID列表
 			}
 		},
 		computed: {
@@ -195,33 +211,14 @@
 						text: template.title || '未命名模板'
 					}))
 				},
+				// 是否全选
+				isAllSelected() {
+					return this.filteredTasks.length > 0 && 
+						   this.selectedTasks.length === this.filteredTasks.length
+				},
 			filteredTasks() {
-				let result = this.tasks
-				
-				// 状态筛选
-				if (this.currentFilter !== 'all') {
-					result = result.filter(task => task.status === this.currentFilter)
-				}
-				
-				// 儿童筛选
-				if (this.filterChildId) {
-					result = result.filter(task => task.child_id === this.filterChildId)
-				}
-				
-				// 类型筛选
-				if (this.filterTypeId) {
-					result = result.filter(task => task.type === this.filterTypeId || task.type_text === this.filterTypeId)
-				}
-				
-				// 开始时间筛选
-				if (this.filterStartTime) {
-					result = result.filter(task => {
-						const taskTime = task.created_at || task.start_time || Date.now()
-						return Number(taskTime) >= Number(this.filterStartTime)
-					})
-				}
-				
-				return result
+				// 后端已处理筛选，直接返回任务列表
+				return this.tasks
 			}
 		},
 		watch: {
@@ -288,12 +285,65 @@
 								const success = await this.deleteTaskFromTable(task.id)
 								if (success) {
 									this.tasks = this.tasks.filter(t => t.id !== task.id)
+									// 从选中列表中移除
+									this.selectedTasks = this.selectedTasks.filter(id => id !== task.id)
 									uni.showToast({ title: '删除成功', icon: 'success' })
 								} else {
 									uni.showToast({ title: '删除失败', icon: 'none' })
 								}
 							} catch (error) {
 								console.error('[Tasks] 删除任务失败:', error)
+								uni.showToast({ title: '删除失败', icon: 'none' })
+							}
+							uni.hideLoading()
+						}
+					}
+				})
+			},
+			// 切换任务选中状态
+			toggleSelectTask(taskId) {
+				const index = this.selectedTasks.indexOf(taskId)
+				if (index > -1) {
+					this.selectedTasks.splice(index, 1)
+				} else {
+					this.selectedTasks.push(taskId)
+				}
+			},
+			// 全选/取消全选
+			toggleSelectAll() {
+				if (this.isAllSelected) {
+					this.selectedTasks = []
+				} else {
+					this.selectedTasks = this.filteredTasks.map(task => task.id)
+				}
+			},
+			// 批量删除任务
+			batchDeleteTasks() {
+				uni.showModal({
+					title: '确认批量删除',
+					content: `确定要删除选中的 ${this.selectedTasks.length} 个任务吗？`,
+					success: async (res) => {
+						if (res.confirm) {
+							uni.showLoading({ title: '删除中...' })
+							try {
+								let successCount = 0
+								for (const taskId of this.selectedTasks) {
+									const success = await this.deleteTaskFromTable(taskId)
+									if (success) {
+										successCount++
+									}
+								}
+								this.tasks = this.tasks.filter(t => !this.selectedTasks.includes(t.id))
+								this.selectedTasks = []
+								if (successCount === 0) {
+									uni.showToast({ title: '全部删除失败', icon: 'none' })
+								} else if (successCount < this.selectedTasks.length) {
+									uni.showToast({ title: `部分删除成功（${successCount}/${this.selectedTasks.length}）`, icon: 'none' })
+								} else {
+									uni.showToast({ title: '全部删除成功', icon: 'success' })
+								}
+							} catch (error) {
+								console.error('[Tasks] 批量删除任务失败:', error)
 								uni.showToast({ title: '删除失败', icon: 'none' })
 							}
 							uni.hideLoading()
@@ -314,7 +364,7 @@
 				this.showAIModal = true
 			},
 			// 处理任务保存
-			async handleTaskSave({ data, isEdit, editId }) {
+			async handleTaskSave({ data, isEdit, editId, isBatch = false }) {
 				uni.showLoading({ title: '保存中...' })
 
 				try {
@@ -325,10 +375,54 @@
 							if (index >= 0) {
 								this.tasks[index] = { ...this.tasks[index], ...data }
 							}
-							uni.showToast({ title: '修改成功', icon: 'success' })
-						} else {
-							uni.showToast({ title: '修改失败', icon: 'none' })
 						}
+						// 先关闭弹窗再显示提示
+						this.editingTask = null
+						this.showAddModal = false
+						uni.hideLoading()
+						uni.showToast({ title: success ? '修改成功' : '修改失败', icon: success ? 'success' : 'none' })
+					} else if (isBatch && Array.isArray(data)) {
+						// 批量创建任务 - 使用批量添加接口
+						const taskRecords = data.map(task => ({
+							title: task.title,
+							description: task.description,
+							type: task.type,
+							difficulty: task.difficulty,
+							base_points: task.base_points,
+							reward_points: task.reward_points || 0,
+							start_time: task.start_time,
+							deadline_time: task.deadline_time || '',
+							need_audit: task.need_audit || false,
+							child_id: task.child_id,
+							textbook_id: task.textbook_id || '',
+							status: task.status || '进行中'
+						}))
+
+						const result = await feishuRequest.batchAddRecords('任务表', taskRecords)
+						if (result.success && result.records) {
+							// 将创建的任务添加到列表
+							result.records.forEach((record, index) => {
+								this.tasks.unshift({
+									id: record.record_id,
+									...data[index],
+									status: '未开始'
+								})
+							})
+						}
+
+						// 检查是否需要保存为模板（使用第一个任务的数据）
+						if (data.length > 0 && data[0].saveAsTemplate && data[0].template_title) {
+							await this.addTemplate(data[0])
+						}
+
+						// 先关闭弹窗再显示提示
+						this.editingTask = null
+						this.showAddModal = false
+						uni.hideLoading()
+						uni.showToast({ 
+							title: result.success && result.records ? `成功创建 ${result.records.length} 个任务` : '批量创建失败', 
+							icon: result.success && result.records ? 'success' : 'none' 
+						})
 					} else {
 						const recordId = await this.addTaskToTable(data)
 						if (recordId) {
@@ -337,28 +431,176 @@
 								...data,
 								status: '未开始'
 							})
-							uni.showToast({ title: '创建成功', icon: 'success' })
-						} else {
-							uni.showToast({ title: '创建失败', icon: 'none' })
 						}
+
+						// 检查是否需要保存为模板
+						if (data.saveAsTemplate && data.template_title) {
+							await this.addTemplate(data)
+						}
+
+						// 先关闭弹窗再显示提示
+						this.editingTask = null
+						this.showAddModal = false
+						uni.hideLoading()
+						uni.showToast({ title: recordId ? '创建成功' : '创建失败', icon: recordId ? 'success' : 'none' })
 					}
 				} catch (error) {
 					console.error('[Tasks] 保存任务失败:', error)
+					// 先关闭弹窗再显示提示
+					this.editingTask = null
+					this.showAddModal = false
+					uni.hideLoading()
 					uni.showToast({ title: '保存失败', icon: 'none' })
 				}
-
-				uni.hideLoading()
-				this.editingTask = null
+			},
+			// 添加模板
+			async addTemplate(taskData) {
+				try {
+					const templateData = {
+						template_title: taskData.template_title,
+						template_description: taskData.template_description || '',
+						title: taskData.title,
+						description: taskData.description,
+						type: taskData.type,
+						difficulty: taskData.difficulty,
+						base_points: taskData.base_points,
+						reward_points: taskData.reward_points || 0,
+						need_audit: taskData.need_audit || false,
+						child_id: taskData.child_id,
+						textbook_id: taskData.textbook_id || ''
+					}
+					// 日期时间字段只有在有值时才添加（飞书API要求必须是Unix时间戳）
+					if (taskData.deadline_time) {
+						templateData.deadline_time = Number(taskData.deadline_time)
+					}
+					if (taskData.start_time) {
+						templateData.start_time = Number(taskData.start_time)
+					}
+					await feishuRequest.addRecord('任务模板表', templateData)
+					console.log('[Tasks] 模板创建成功')
+				} catch (error) {
+					console.error('[Tasks] 创建模板失败:', error)
+				}
 			},
 			// 处理AI生成任务
-			handleGenerateTasks({ prompt, count, difficulty }) {
+			async handleGenerateTasks({ prompt, count, difficulty }) {
 				uni.showLoading({ title: 'AI生成中...' })
-				setTimeout(() => {
-					uni.hideLoading()
-					uni.showToast({ title: '生成成功！', icon: 'success' })
+
+				try {
+					// 获取登录用户信息
+					const parentInfo = await UserManager.getCurrentParent()
+					console.log('[Tasks] 当前登录用户:', parentInfo)
+
+					// 获取飞书多维表格配置
+					const feishuApi = await import('@/uni_modules/settings-feishu-dataBase/src/utils/feishu-api.js')
+					const feishuConfig = feishuApi.default.getConfig() || {}
+					console.log('[Tasks] 飞书配置:', feishuConfig)
+
+					// 构建请求参数
+					const params = cozeRequest.buildTaskParams(
+						prompt,
+						count,
+						difficulty,
+						parentInfo,
+						feishuConfig
+					)
+
+					// 调用Coze流式工作流
+					const tasks = []
+					let hasError = false
+					let errorMessage = ''
+
+					await new Promise((resolve) => {
+						cozeRequest.generateTasksStream(
+							params,
+							(data) => {
+								// 流式数据回调
+								console.log('[Tasks] 收到流式数据:', data)
+								if (data.tasks && Array.isArray(data.tasks)) {
+									tasks.push(...data.tasks)
+								} else if (data.task) {
+									tasks.push(data.task)
+								} else if (data.error) {
+									hasError = true
+									errorMessage = data.error
+								}
+							},
+							(error) => {
+								// 错误回调
+								hasError = true
+								errorMessage = error
+								resolve()
+							},
+							() => {
+								// 完成回调
+								resolve()
+							}
+						)
+					})
+
+					if (hasError) {
+						uni.hideLoading()
+						uni.showToast({ title: errorMessage || '生成失败', icon: 'none' })
+						return
+					}
+
+					// 如果流式请求没返回数据，尝试非流式请求
+					if (tasks.length === 0) {
+						const result = await cozeRequest.generateTasks(params)
+						if (result.success && result.data) {
+							if (result.data.tasks && Array.isArray(result.data.tasks)) {
+								tasks.push(...result.data.tasks)
+							} else if (result.data.task) {
+								tasks.push(result.data.task)
+							}
+						} else {
+							uni.hideLoading()
+							uni.showToast({ title: result.message || '生成失败', icon: 'none' })
+							return
+						}
+					}
+
+					// 保存生成的任务
+					if (tasks.length > 0) {
+						const childId = this.children[0]?.id || ''
+						for (const task of tasks) {
+							const taskData = {
+								title: task.title || '未命名任务',
+								description: task.description || '',
+								type: task.type || '学习任务',
+								difficulty: task.difficulty || difficulty,
+								base_points: task.base_points || 10,
+								reward_points: task.reward_points || 0,
+								start_time: new Date().getTime(),
+								deadline_time: task.deadline_time || '',
+								need_audit: task.need_audit || false,
+								child_id: childId,
+								textbook_id: task.textbook_id || '',
+								status: '未开始'
+							}
+							const recordId = await this.addTaskToTable(taskData)
+							if (recordId) {
+								this.tasks.unshift({
+									id: recordId,
+									...taskData
+								})
+							}
+						}
+						uni.hideLoading()
+						uni.showToast({ title: `成功生成 ${tasks.length} 个任务`, icon: 'success' })
+					} else {
+						uni.hideLoading()
+						uni.showToast({ title: '未生成任何任务', icon: 'none' })
+					}
+
 					this.showAIModal = false
 					this.loadTasks()
-				}, 2000)
+				} catch (error) {
+					console.error('[Tasks] AI生成任务失败:', error)
+					uni.hideLoading()
+					uni.showToast({ title: '生成失败: ' + (error.message || error), icon: 'none' })
+					this.showAIModal = false
+				}
 			},
 			async loadCategories() {
 				try {
@@ -607,8 +849,11 @@
 					if (taskData.reward_points && taskData.reward_points > 0) {
 						data.reward_points = taskData.reward_points
 					}
+					if (taskData.start_time) {
+						data.start_time = Number(taskData.start_time)
+					}
 					if (taskData.deadline_time) {
-						data.deadline_time = taskData.deadline_time
+						data.deadline_time = Number(taskData.deadline_time)
 					}
 					if (taskData.textbook_id) {
 						data.textbook_id = taskData.textbook_id
@@ -798,6 +1043,12 @@
 		margin-bottom: 25rpx;
 	}
 
+	.header-actions {
+		display: flex;
+		gap: 15rpx;
+		align-items: center;
+	}
+
 	.section-title {
 		font-size: 32rpx;
 		font-weight: bold;
@@ -810,6 +1061,26 @@
 		border-radius: 30rpx;
 		font-size: 26rpx;
 		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		color: #fff;
+		border: none;
+	}
+
+	.batch-delete-btn {
+		height: 60rpx;
+		padding: 0 20rpx;
+		border-radius: 30rpx;
+		font-size: 24rpx;
+		background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+		color: #fff;
+		border: none;
+	}
+
+	.select-all-btn {
+		height: 60rpx;
+		padding: 0 20rpx;
+		border-radius: 30rpx;
+		font-size: 24rpx;
+		background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 		color: #fff;
 		border: none;
 	}
@@ -850,6 +1121,34 @@
 		padding: 25rpx;
 		background-color: #fafafa;
 		border-radius: 16rpx;
+		align-items: center;
+	}
+
+	.task-checkbox {
+		margin-right: 15rpx;
+	}
+
+	.checkbox {
+		width: 40rpx;
+		height: 40rpx;
+		border: 3rpx solid #ccc;
+		border-radius: 8rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-color: #fff;
+		transition: all 0.2s ease;
+
+		&.checked {
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			border-color: #667eea;
+		}
+	}
+
+	.check-icon {
+		color: #fff;
+		font-size: 24rpx;
+		font-weight: bold;
 	}
 
 	.task-icon {

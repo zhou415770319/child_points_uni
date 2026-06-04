@@ -111,7 +111,6 @@
     "build:mp-weixin": "uni build -p mp-weixin"
   },
   "dependencies": {
-    "@dcloudio/uni-cli-i18n": "^2.0.2-5000720260410001",
     "@vue/shared": "^3.5.35",
     "express": "^5.2.1",
     "finalhandler": "^2.1.1",
@@ -120,6 +119,7 @@
     "webpack": "^5.107.2"
   },
   "devDependencies": {
+    "@dcloudio/uni-cli-i18n": "^2.0.2-5000720260410001",
     "@dcloudio/uni-cli-shared": "^2.0.2-5000720260410001",
     "@dcloudio/uni-h5": "^2.0.2-5000720260410001",
     "@dcloudio/uni-mp-weixin": "^2.0.2-5000720260410001",

@@ -11,7 +11,7 @@
 					<view class="section-title">📋 模板信息</view>
 					<view class="form-item">
 						<text class="form-label">模板名称</text>
-						<input class="form-input" v-model="formData.template_name" placeholder="请输入模板名称" />
+						<input class="form-input" v-model="formData.template_title" placeholder="请输入模板名称" />
 					</view>
 					<view class="form-item">
 						<text class="form-label">模板描述</text>
@@ -29,7 +29,7 @@
 				</view>
 				<view v-if="pageType === 'task' && saveAsTemplate && !editingTask" class="form-item">
 					<text class="form-label">模板名称</text>
-					<input class="form-input" v-model="formData.template_name" placeholder="请输入模板名称" />
+					<input class="form-input" v-model="formData.template_title" placeholder="请输入模板名称" />
 				</view>
 
 				<!-- 任务弹框：使用模板 -->
@@ -41,7 +41,14 @@
 				</view>
 				<view class="form-item" v-if="pageType === 'task' && useTemplate && !editingTask">
 					<text class="form-label">选择模板</text>
+					<input 
+						class="form-input" 
+						v-model="templateSearchKeyword" 
+						placeholder="搜索模板"
+						@input="onTemplateSearch"
+					/>
 					<uni-data-select 
+						ref="templateSelect"
 						v-model="selectedTemplate" 
 						:localdata="templateOptions" 
 						placeholder="请选择模板"
@@ -79,11 +86,45 @@
 					<text class="form-label">基础积分</text>
 					<input class="form-input" type="number" v-model="formData.base_points" placeholder="请输入基础积分" />
 				</view>
+				<view class="form-item">
+					<view class="audit-switch">
+						<text class="form-label">需要审核</text>
+						<switch :checked="formData.need_audit" @change="onAuditChange" />
+					</view>
+				</view>
 				<view class="form-item" v-if="formData.need_audit">
 					<text class="form-label">奖励积分</text>
 					<input class="form-input" type="number" v-model="formData.reward_points" placeholder="请输入奖励积分（完成任务额外奖励）" />
 				</view>
+				<!-- 任务开始时间 -->
 				<view class="form-item">
+					<text class="form-label">任务开始时间</text>
+					<uni-datetime-picker
+						v-model="formData.start_time"
+						type="date"
+						return-type="timestamp"
+						placeholder="请选择任务开始时间"
+					/>
+				</view>
+				<!-- 是否批量创建 -->
+				<view class="form-item">
+					<view class="audit-switch">
+						<text class="form-label">批量创建</text>
+						<switch :checked="formData.batch_create" @change="onBatchCreateChange" />
+					</view>
+				</view>
+				<!-- 任务周期（批量创建时显示） -->
+				<view class="form-item" v-if="formData.batch_create">
+					<text class="form-label">任务周期</text>
+					<uni-data-select 
+						v-model="formData.period" 
+						:localdata="periodOptions" 
+						placeholder="请选择周期"
+						@change="onPeriodChange"
+					/>
+				</view>
+				<!-- 截止时间（批量创建时显示） -->
+				<view class="form-item" v-if="formData.batch_create">
 					<text class="form-label">截止时间</text>
 					<uni-datetime-picker
 						v-model="formData.deadline_time"
@@ -91,12 +132,6 @@
 						return-type="timestamp"
 						placeholder="请选择截止时间"
 					/>
-				</view>
-				<view class="form-item">
-					<view class="audit-switch">
-						<text class="form-label">需要审核</text>
-						<switch :checked="formData.need_audit" @change="onAuditChange" />
-					</view>
 				</view>
 				<view class="form-item">
 					<text class="form-label">关联儿童</text>
@@ -171,7 +206,10 @@
 					difficulty: '适中',
 					base_points: '10',
 					reward_points: '1',
+					start_time: new Date().setHours(0, 0, 0, 0),
 					deadline_time: '',
+					batch_create: false,
+					period: '',
 					need_audit: false,
 					child_name: '',
 					child_id: '',
@@ -185,7 +223,8 @@
 				templates: [],
 				selectedTemplate: '',
 				selectedChild: '',
-				selectedTextbook: ''
+				selectedTextbook: '',
+				templateSearchKeyword: ''
 			}
 		},
 		computed: {
@@ -210,8 +249,8 @@
 				}))
 			},
 			childOptions() {
-				return this.children.map((child, index) => ({
-					value: index.toString(),
+				return this.children.map((child) => ({
+					value: child.child_id || child.id || '',
 					text: child.name
 				}))
 			},
@@ -224,8 +263,15 @@
 			templateOptions() {
 				return this.templates.map((template, index) => ({
 					value: index.toString(),
-					text: template.title || '未命名模板'
+					text: template.template_title || template.title || '未命名模板'
 				}))
+			},
+			periodOptions() {
+				return [
+					{ value: 'daily', text: '每天' },
+					{ value: 'weekly', text: '每周' },
+					{ value: 'monthly', text: '每月' }
+				]
 			}
 		},
 		watch: {
@@ -246,7 +292,7 @@
 				this.resetForm()
 				
 				if (this.editingTask) {
-					// 编辑模式：清空后再赋值
+					// 编辑模式：清空后再赋值，使用 parseFeishuField 解析飞书多维表格的嵌套格式
 					this.formData = {
 						title: this.editingTask.title || '',
 						description: this.editingTask.description || '',
@@ -254,23 +300,27 @@
 						difficulty: this.editingTask.difficulty || '',
 						base_points: this.editingTask.base_points ? this.editingTask.base_points.toString() : '',
 						reward_points: this.editingTask.reward_points ? this.editingTask.reward_points.toString() : '',
+						start_time: this.editingTask.start_time || '',
 						deadline_time: this.editingTask.deadline_time || '',
+						batch_create: this.editingTask.batch_create || false,
+						period: this.editingTask.period || '',
 						need_audit: this.editingTask.need_audit || false,
-						child_name: this.editingTask.child_name || '',
-						child_id: this.editingTask.child_id || '',
-						textbook_id: this.editingTask.textbook_id || '',
-						textbook_name: this.editingTask.textbook_name || '',
+						child_name: this.parseFeishuField(this.editingTask.child_name),
+						child_id: this.parseFeishuField(this.editingTask.child_id),
+						textbook_id: this.parseFeishuField(this.editingTask.textbook_id),
+						textbook_name: this.parseFeishuField(this.editingTask.textbook_name),
 						template_name: this.editingTask.template_name || '',
 						template_description: this.editingTask.template_description || ''
 					}
 					
 					// 设置选中状态
-					const childIndex = this.children.findIndex(c => c.child_id === this.formData.child_id || c.id === this.formData.child_id)
-					this.selectedChild = childIndex >= 0 ? childIndex.toString() : ''
+					this.selectedChild = this.formData.child_id || ''
 					this.selectedTextbook = this.formData.textbook_id || ''
 				}
 			},
 			resetForm() {
+				const today = new Date()
+				today.setHours(0, 0, 0, 0)
 				this.formData = {
 					title: '',
 					description: '',
@@ -278,7 +328,10 @@
 					difficulty: '',
 					base_points: '',
 					reward_points: '',
+					start_time: today.getTime(),
 					deadline_time: '',
+					batch_create: false,
+					period: '',
 					need_audit: false,
 					child_name: '',
 					child_id: '',
@@ -314,6 +367,32 @@
 				const value = e?.detail?.value !== undefined ? e.detail.value : e
 				this.formData.need_audit = value
 			},
+			onBatchCreateChange(e) {
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.formData.batch_create = value
+				if (!this.formData.batch_create) {
+					this.formData.period = ''
+				}
+			},
+			onPeriodChange(e) {
+				const value = e?.detail?.value || e
+				this.formData.period = value
+			},
+			// 辅助函数：解析飞书多维表格的字段值（可能是 {value: [{text: 'xxx'}] } 或直接是字符串）
+			parseFeishuField(value) {
+				if (!value) return ''
+				// 如果是字符串，直接返回
+				if (typeof value === 'string') return value
+				// 如果是数组且第一个元素有 text 属性
+				if (Array.isArray(value) && value[0] && value[0].text) return value[0].text
+				// 如果是对象且有 value 属性（{value: [{text: 'xxx'}]}）
+				if (typeof value === 'object' && value.value) {
+					if (Array.isArray(value.value) && value.value[0] && value.value[0].text) {
+						return value.value[0].text
+					}
+				}
+				return ''
+			},
 			onSaveAsTemplateChange(e) {
 				const value = e?.detail?.value !== undefined ? e.detail.value : e
 				this.saveAsTemplate = value
@@ -334,10 +413,15 @@
 					this.selectedTemplate = ''
 				}
 			},
+			onTemplateSearch() {
+				this.loadTemplates(this.templateSearchKeyword)
+			},
 			onTemplateChange(e) {
 				const value = e?.detail?.value || e
 				const index = parseInt(value)
 				const template = this.templates[index]
+				console.log('template----',template);
+				
 				if (template) {
 					// 清空之前的表单数据，然后赋值新模板数据
 					this.formData.title = template.title || ''
@@ -346,23 +430,32 @@
 					this.formData.difficulty = template.difficulty || ''
 					this.formData.base_points = template.base_points ? template.base_points.toString() : ''
 					this.formData.reward_points = template.reward_points ? template.reward_points.toString() : ''
+					this.formData.start_time = template.start_time || ''
 					this.formData.deadline_time = template.deadline_time || ''
+					this.formData.batch_create = template.batch_create || false
+					this.formData.period = template.period || ''
 					this.formData.need_audit = template.need_audit || false
-					this.formData.child_name = ''
-					this.formData.child_id = ''
-					this.formData.textbook_id = ''
-					this.formData.textbook_name = ''
 					
-					// 重置选中状态
-					this.selectedChild = ''
-					this.selectedTextbook = ''
+					// 关联儿童 - 使用统一的解析函数
+					this.formData.child_id = this.parseFeishuField(template.child_id)
+					this.formData.child_name = this.parseFeishuField(template.child_name)
 					
+					// 绑定教材 - 使用统一的解析函数
+					this.formData.textbook_id = this.parseFeishuField(template.textbook_id)
+					this.formData.textbook_name = this.parseFeishuField(template.textbook_name)
+					
+					// 设置选中状态
+					this.selectedChild = this.formData.child_id
+					this.selectedTextbook = this.formData.textbook_id
+					console.log('template---this.formData-',template,this.formData);
+
 					uni.showToast({ title: '模板信息已填充', icon: 'success' })
 				}
 			},
-			async loadTemplates() {
+			async loadTemplates(keyword = '') {
 				try {
-					const result = await feishuRequest.queryRecords('任务模板表')
+					const params = keyword ? { keyword } : {}
+					const result = await feishuRequest.queryRecords('任务模板表', params)
 					if (result.success && result.data && result.data.length > 0) {
 						this.templates = result.data.map(item => {
 							const title = item.fields.title 
@@ -376,22 +469,36 @@
 									? item.fields.description[0].text 
 									: item.fields.description)
 								: ''
+
+							const templateTitle = item.fields.template_title 
+								? (Array.isArray(item.fields.template_title) && item.fields.template_title[0] && item.fields.template_title[0].text 
+									? item.fields.template_title[0].text 
+									: item.fields.template_title)
+								: ''
 							
 							return {
-								id: item.record_id,
+								...item.fields,
 								title: title,
-								description: description,
-								type: item.fields.type || '',
-								difficulty: item.fields.difficulty || '',
-								base_points: item.fields.base_points || 0,
-								reward_points: item.fields.reward_points || 0,
-								deadline_time: item.fields.deadline_time || '',
-								need_audit: item.fields.need_audit || false
+								template_title: templateTitle,
+								description: description
+								
 							}
 						})
 					} else {
 						this.templates = []
 					}
+					
+					// 搜索后清空选中状态，让用户可以直接看到搜索结果
+					this.selectedTemplate = ''
+					
+					// 尝试自动展开下拉框
+					this.$nextTick(() => {
+						if (this.$refs.templateSelect && typeof this.$refs.templateSelect.showSelector === 'function') {
+							this.$refs.templateSelect.showSelector()
+						} else if (this.$refs.templateSelect && typeof this.$refs.templateSelect.open === 'function') {
+							this.$refs.templateSelect.open()
+						}
+					})
 				} catch (error) {
 					console.error('[TaskFormModal] 加载模板列表失败:', error)
 					this.templates = []
@@ -400,13 +507,13 @@
 			handleSave() {
 				// 任务模板模式验证
 				if (this.pageType === 'template') {
-					if (!this.formData.template_name || !this.formData.title || !this.formData.type || !this.formData.difficulty || !this.formData.base_points) {
+					if (!this.formData.template_title || !this.formData.title || !this.formData.type || !this.formData.difficulty || !this.formData.base_points) {
 						uni.showToast({ title: '请填写模板名称和任务信息', icon: 'none' })
 						return
 					}
 
 					const templateData = {
-						template_name: this.formData.template_name,
+						template_title: this.formData.template_title,
 						template_description: this.formData.template_description,
 						title: this.formData.title,
 						description: this.formData.description,
@@ -443,41 +550,131 @@ console.log('任务模板----',{
 					return
 				}
 
+				// 批量创建时验证
+				if (this.formData.batch_create) {
+					if (!this.formData.deadline_time) {
+						uni.showToast({ title: '批量创建需要设置截止时间', icon: 'none' })
+						return
+					}
+					if (!this.formData.period) {
+						uni.showToast({ title: '批量创建需要选择任务周期', icon: 'none' })
+						return
+					}
+				}
+
 				// 检查是否需要保存为模板
-				if (this.saveAsTemplate && !this.formData.template_name) {
+				if (this.saveAsTemplate && !this.formData.template_title) {
 					uni.showToast({ title: '请输入模板名称', icon: 'none' })
 					return
 				}
 
-				const taskData = {
+				// 基础任务数据
+				const baseTaskData = {
 					title: this.formData.title,
 					description: this.formData.description,
 					type: this.formData.type,
 					difficulty: this.formData.difficulty,
 					base_points: parseInt(this.formData.base_points),
 					reward_points: this.formData.reward_points ? parseInt(this.formData.reward_points) : 0,
-					deadline_time: this.formData.deadline_time || '',
 					need_audit: this.formData.need_audit || false,
 					child_id: this.formData.child_id,
 					textbook_id: this.formData.textbook_id || '',
 					status: this.editingTask?.status || '未开始',
 					saveAsTemplate: this.saveAsTemplate,
-					template_name: this.saveAsTemplate ? this.formData.template_name : '',
+					template_title: this.saveAsTemplate ? this.formData.template_title : '',
 					template_description: this.saveAsTemplate ? this.formData.description : ''
 				}
-console.log('任务----',{
-					data: taskData,
-					isEdit: !!this.editingTask,
-					editId: this.editingTask?.id,
-					isTemplate: false
+				// 日期时间字段只有在有值时才添加（飞书API要求必须是Unix时间戳）
+				if (this.formData.start_time) {
+					baseTaskData.start_time = Number(this.formData.start_time)
 				}
-)
-				this.$emit('save', {
-					data: taskData,
-					isEdit: !!this.editingTask,
-					editId: this.editingTask?.id,
-					isTemplate: false
-				})
+				if (this.formData.deadline_time) {
+					baseTaskData.deadline_time = Number(this.formData.deadline_time)
+				}
+
+				// 如果是批量创建，生成多个任务
+				if (this.formData.batch_create && this.formData.period) {
+					const tasks = this.generateBatchTasks(baseTaskData)
+					this.$emit('save', {
+						data: tasks,
+						isEdit: !!this.editingTask,
+						editId: this.editingTask?.id,
+						isTemplate: false,
+						isBatch: true
+					})
+				} else {
+					this.$emit('save', {
+						data: baseTaskData,
+						isEdit: !!this.editingTask,
+						editId: this.editingTask?.id,
+						isTemplate: false,
+						isBatch: false
+					})
+				}
+			},
+			// 生成批量任务
+			generateBatchTasks(baseTaskData) {
+				const tasks = []
+				const startDate = new Date(parseInt(this.formData.start_time))
+				const endDate = new Date(parseInt(this.formData.deadline_time))
+				const period = this.formData.period
+
+				// 设置为当天零点
+				startDate.setHours(0, 0, 0, 0)
+				endDate.setHours(0, 0, 0, 0)
+
+				switch (period) {
+					case 'daily': // 每天
+						{
+							const diffTime = endDate.getTime() - startDate.getTime()
+							const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+							for (let i = 0; i < diffDays; i++) {
+								const taskDate = new Date(startDate)
+								taskDate.setDate(taskDate.getDate() + i)
+								tasks.push({
+									...baseTaskData,
+									start_time: taskDate.getTime(),
+									deadline_time: taskDate.getTime() // 当天截止
+								})
+							}
+						}
+						break
+
+					case 'weekly': // 每周（每周一）
+						{
+							const currentDate = new Date(startDate)
+							// 将开始日期调整到本周一
+							const dayOfWeek = currentDate.getDay()
+							if (dayOfWeek !== 1) {
+								currentDate.setDate(currentDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+							}
+
+							while (currentDate <= endDate) {
+								tasks.push({
+									...baseTaskData,
+									start_time: currentDate.getTime()
+								})
+								currentDate.setDate(currentDate.getDate() + 7)
+							}
+						}
+						break
+
+					case 'monthly': // 每月（每月1号）
+						{
+							const currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
+							while (currentDate <= endDate) {
+								tasks.push({
+									...baseTaskData,
+									start_time: currentDate.getTime()
+								})
+								currentDate.setMonth(currentDate.getMonth() + 1)
+							}
+						}
+						break
+				}
+
+				console.log('[TaskFormModal] 生成批量任务:', tasks.length, '个')
+				return tasks
 			}
 		}
 	}
