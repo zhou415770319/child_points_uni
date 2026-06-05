@@ -740,6 +740,7 @@ async function getHomeData(params) {
 	const tokenResult = await getAccessToken()
 	const results = {
 		tasks: [],
+		otherTasks: [],
 		rewards: [],
 		textbooks: []
 	}
@@ -747,11 +748,38 @@ async function getHomeData(params) {
 	// 并行获取所有数据
 	const promises = []
 	
-	// 1. 获取今日任务
+	// 计算今日的开始时间戳和结束时间戳
+	const today = new Date()
+	today.setHours(0, 0, 0, 0)
+	const todayStart = today.getTime()
+	const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1 // 当天23:59:59
+	
+	// 1. 获取今日任务（start_time 为空或在今日范围内）
 	if (tables['任务表']) {
 		promises.push((async () => {
 			try {
 				const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${baseToken}/tables/${tables['任务表']}/records/search`
+				
+				// 简化筛选条件：只按 child_id 筛选，然后在代码中过滤
+				const filter = {
+					"conjunction": "and",
+					"conditions": [
+						{
+							"field_name": "child_id",
+							"operator": "is",
+							"value": [childId]
+						}
+					]
+				}
+				
+				console.log('[FeishuTools] 获取任务请求参数:', {
+					childId,
+					todayStart,
+					todayEnd,
+					todayDate: new Date(todayStart).toISOString(),
+					filter: JSON.stringify(filter)
+				})
+				
 				const response = await uniCloud.httpclient.request(url, {
 					method: 'POST',
 					headers: {
@@ -759,21 +787,57 @@ async function getHomeData(params) {
 						'Content-Type': 'application/json'
 					},
 					data: {
-						filter: buildFilter({ child_id: childId })
+						filter: filter
 					},
 					dataType: 'json'
 				})
+				
+				console.log('[FeishuTools] 获取任务响应:', {
+					status: response.status,
+					code: response.data.code,
+					message: response.data.msg || response.data.message,
+					total: response.data.data?.total || 0,
+					itemsCount: response.data.data?.items?.length || 0
+				})
+				
 				if (response.data.code === 0) {
-					results.tasks = response.data.data.items || []
+					const allTasks = response.data.data.items || []
+					
+					// 在代码中筛选今日任务和其他任务
+					results.tasks = []
+					results.otherTasks = []
+					
+					allTasks.forEach(item => {
+						const startTime = item.fields.start_time
+						
+						// 判断是否为空值
+						const isEmpty = startTime === null || startTime === undefined || startTime === ''
+						
+						if (isEmpty) {
+							// start_time 为空的任务，归为"其他任务"
+							results.otherTasks.push(item)
+						} else {
+							// start_time 有值的任务，判断是否在今日范围内
+							const startTimeNum = Number(startTime)
+							if (startTimeNum >= todayStart && startTimeNum <= todayEnd) {
+								results.tasks.push(item)
+							}
+						}
+					})
+					
+					console.log('[FeishuTools] 任务数据解析成功，今日任务:', results.tasks.length, '条，其他任务:', results.otherTasks.length, '条')
+				} else {
+					console.error('[FeishuTools] 获取任务失败，错误码:', response.data.code, '错误信息:', response.data.msg || response.data.message)
 				}
 			} catch (error) {
-				console.error('[FeishuTools] 获取任务数据失败:', error.message)
+				console.error('[FeishuTools] 获取任务数据失败:', error.message, error.stack)
 				results.tasks = []
+				results.otherTasks = []
 			}
 		})())
 	}
 	
-	// 2. 获取兑换记录（最近3条）
+	// 2. 获取兑换记录（最近10条）
 	if (tables['兑换记录表']) {
 		promises.push((async () => {
 			try {
@@ -786,12 +850,55 @@ async function getHomeData(params) {
 					},
 					data: {
 						filter: buildFilter({ child_id: childId }),
-						page_size: 3
+						page_size: 10
 					},
 					dataType: 'json'
 				})
 				if (response.data.code === 0) {
-					results.rewards = response.data.data.items || []
+					let rewards = response.data.data.items || []
+					
+					// 提取所有图片的 file_token
+					const fileTokens = []
+					rewards.forEach(reward => {
+						if (reward.fields.gift_image && reward.fields.gift_image.type === 17 && 
+							reward.fields.gift_image.value && reward.fields.gift_image.value.length > 0) {
+							reward.fields.gift_image.value.forEach(img => {
+								if (img.file_token) {
+									fileTokens.push(img.file_token)
+								}
+							})
+						}
+					})
+					
+					// 如果有图片需要获取URL，批量请求
+					if (fileTokens.length > 0) {
+						try {
+							const urlResult = await getImageUrls({ fileTokens: fileTokens })
+							if (urlResult.success && urlResult.urlMap) {
+								// 将获取到的URL回填到奖励数据中
+								rewards = rewards.map(reward => {
+									if (reward.fields.gift_image && reward.fields.gift_image.type === 17 && 
+										reward.fields.gift_image.value && reward.fields.gift_image.value.length > 0) {
+										reward.fields.gift_image.value = reward.fields.gift_image.value.map(img => {
+											if (img.file_token && urlResult.urlMap[img.file_token]) {
+												return {
+													...img,
+													tmp_download_url: urlResult.urlMap[img.file_token]
+												}
+											}
+											return img
+										})
+									}
+									return reward
+								})
+								console.log('[FeishuTools] 奖励图片URL批量获取成功，共', Object.keys(urlResult.urlMap).length, '张')
+							}
+						} catch (imgError) {
+							console.error('[FeishuTools] 获取奖励图片URL失败:', imgError.message)
+						}
+					}
+					
+					results.rewards = rewards
 				}
 			} catch (error) {
 				console.error('[FeishuTools] 获取兑换记录失败:', error.message)
@@ -812,7 +919,7 @@ async function getHomeData(params) {
 						'Content-Type': 'application/json'
 					},
 					data: {
-						filter: buildFilter({ child_id: childId })
+						filter: buildFilter({ child_id: childId, status: "开启" })
 					},
 					dataType: 'json'
 				})

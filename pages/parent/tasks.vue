@@ -109,12 +109,12 @@
 			@save="handleTaskSave"
 		/>
 
-		<!-- AI生成任务弹窗 -->
-		<AITaskModal
+		<!-- AI生成任务对话框 -->
+		<AIChatModal
 			:visible="showAIModal"
-			:difficulties="difficulties"
+			:children="children"
 			@close="showAIModal = false"
-			@generate="handleGenerateTasks"
+			@tasks-generated="handleTasksGenerated"
 		/>
 		
 		<custom-tab-bar ref="tabBar"></custom-tab-bar>
@@ -124,13 +124,13 @@
 <script>
 	import customTabBar from '@/custom-tab-bar/index.vue'
 	import TaskFormModal from '@/components/TaskFormModal.vue'
-	import AITaskModal from '@/components/AITaskModal.vue'
+	import AIChatModal from '@/components/AIChatModal.vue'
 	import UserManager from '@/common/user-manager.js'
 	import { feishuRequest } from '@/common/feishu-request.js'
 	import { cozeRequest } from '@/common/coze-request.js'
 	import CategoryManager from '@/common/category-manager.js'
 	export default {
-		components: { customTabBar, TaskFormModal, AITaskModal },
+		components: { customTabBar, TaskFormModal, AIChatModal },
 		data() {
 			return {
 				tasks: [],
@@ -487,23 +487,31 @@
 				uni.showLoading({ title: 'AI生成中...' })
 
 				try {
-					// 获取登录用户信息
-					const parentInfo = await UserManager.getCurrentParent()
-					console.log('[Tasks] 当前登录用户:', parentInfo)
+					// 获取儿童信息
+					const child = this.children[0]
+					if (!child) {
+						uni.hideLoading()
+						uni.showToast({ title: '请先添加儿童信息', icon: 'none' })
+						return
+					}
 
-					// 获取飞书多维表格配置
-					const feishuApi = await import('@/uni_modules/settings-feishu-dataBase/src/utils/feishu-api.js')
-					const feishuConfig = feishuApi.default.getConfig() || {}
-					console.log('[Tasks] 飞书配置:', feishuConfig)
+					// 构建用户信息
+					const userInfo = {
+						name: child.name,
+						grade: child.grade || '',
+						age: child.age || '',
+						interests: child.interests || ''
+					}
 
 					// 构建请求参数
 					const params = cozeRequest.buildTaskParams(
 						prompt,
 						count,
 						difficulty,
-						parentInfo,
-						feishuConfig
+						userInfo
 					)
+
+					console.log('[Tasks] Coze请求参数:', params)
 
 					// 调用Coze流式工作流
 					const tasks = []
@@ -523,6 +531,8 @@
 								} else if (data.error) {
 									hasError = true
 									errorMessage = data.error
+								} else if (data.data && data.data.tasks) {
+									tasks.push(...data.data.tasks)
 								}
 							},
 							(error) => {
@@ -552,6 +562,8 @@
 								tasks.push(...result.data.tasks)
 							} else if (result.data.task) {
 								tasks.push(result.data.task)
+							} else if (result.data.data && result.data.data.tasks) {
+								tasks.push(...result.data.data.tasks)
 							}
 						} else {
 							uni.hideLoading()
@@ -562,7 +574,7 @@
 
 					// 保存生成的任务
 					if (tasks.length > 0) {
-						const childId = this.children[0]?.id || ''
+						const childId = child.id || ''
 						for (const task of tasks) {
 							const taskData = {
 								title: task.title || '未命名任务',
@@ -596,13 +608,69 @@
 					this.showAIModal = false
 					this.loadTasks()
 				} catch (error) {
-					console.error('[Tasks] AI生成任务失败:', error)
+				console.error('[Tasks] AI生成任务失败:', error)
+				uni.hideLoading()
+				uni.showToast({ title: '生成失败: ' + (error.message || error), icon: 'none' })
+				this.showAIModal = false
+			}
+		},
+		// 处理AI对话框生成的任务
+		async handleTasksGenerated(tasks) {
+			if (!tasks || tasks.length === 0) {
+				return
+			}
+
+			uni.showLoading({ title: '保存任务中...' })
+
+			try {
+				const child = this.children[0]
+				if (!child) {
 					uni.hideLoading()
-					uni.showToast({ title: '生成失败: ' + (error.message || error), icon: 'none' })
-					this.showAIModal = false
+					uni.showToast({ title: '请先添加儿童信息', icon: 'none' })
+					return
 				}
-			},
-			async loadCategories() {
+
+				const childId = child.id || ''
+				let successCount = 0
+
+				for (const task of tasks) {
+					const taskData = {
+						title: task.title || '未命名任务',
+						description: task.description || '',
+						type: task.type || '学习任务',
+						difficulty: task.difficulty || '简单',
+						base_points: task.base_points || 10,
+						reward_points: task.reward_points || 0,
+						start_time: new Date().getTime(),
+						deadline_time: task.deadline_time || '',
+						need_audit: task.need_audit || false,
+						child_id: childId,
+						textbook_id: task.textbook_id || '',
+						status: '未开始'
+					}
+					const recordId = await this.addTaskToTable(taskData)
+					if (recordId) {
+						this.tasks.unshift({
+							id: recordId,
+							...taskData
+						})
+						successCount++
+					}
+				}
+
+				uni.hideLoading()
+				if (successCount > 0) {
+					uni.showToast({ title: `成功保存 ${successCount} 个任务`, icon: 'success' })
+				} else {
+					uni.showToast({ title: '保存失败', icon: 'none' })
+				}
+			} catch (error) {
+				console.error('[Tasks] 保存AI生成任务失败:', error)
+				uni.hideLoading()
+				uni.showToast({ title: '保存失败: ' + (error.message || error), icon: 'none' })
+			}
+		},
+		async loadCategories() {
 				try {
 					const categories = await CategoryManager.loadCategories('tasks-page')
 					if (categories) {

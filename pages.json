@@ -132,6 +132,12 @@
 			}
 		},
 		{
+			"path": "pages/child/profile",
+			"style": {
+				"navigationBarTitleText": "个人信息"
+			}
+		},
+		{
 			"path": "pages/list/list",
 			"style": {
 				"enablePullDownRefresh": true,

@@ -5,54 +5,9 @@
 
 class CozeRequest {
 	constructor() {
-		this.workflowUrl = null
-		this.apiKey = null
-		this.configKey = 'coze_config'
-	}
-
-	/**
-	 * 获取Coze配置
-	 * @returns {Object} 配置对象
-	 */
-	getConfig() {
-		try {
-			const config = uni.getStorageSync(this.configKey)
-			if (config) {
-				return JSON.parse(config)
-			}
-		} catch (e) {
-			console.warn('[CozeRequest] 读取配置失败:', e)
-		}
-		return null
-	}
-
-	/**
-	 * 保存Coze配置
-	 * @param {Object} config - 配置对象
-	 */
-	saveConfig(config) {
-		try {
-			uni.setStorageSync(this.configKey, JSON.stringify(config))
-			this.workflowUrl = config.workflowUrl
-			this.apiKey = config.apiKey
-			console.log('[CozeRequest] 配置保存成功')
-		} catch (e) {
-			console.error('[CozeRequest] 保存配置失败:', e)
-		}
-	}
-
-	/**
-	 * 初始化配置
-	 * @private
-	 */
-	initConfig() {
-		const config = this.getConfig()
-		if (config && config.workflowUrl && config.apiKey) {
-			this.workflowUrl = config.workflowUrl
-			this.apiKey = config.apiKey
-			return true
-		}
-		return false
+		this.token = 'pat_wVqn8SbKtO22vdsDcIg1cASkrhrdJwX9LyJjphyEVgMSFoVUXaoPHsq2YvOYiUJg'
+		this.workflowId = '7639924978796101666'
+		this.baseURL = 'https://api.coze.cn'
 	}
 
 	/**
@@ -63,69 +18,35 @@ class CozeRequest {
 	 * @param {Function} onComplete - 完成回调
 	 */
 	async generateTasksStream(params, onData, onError, onComplete) {
-		if (!this.initConfig()) {
-			onError('Coze配置未设置，请先配置工作流地址和API密钥')
-			return
-		}
-
 		console.log('[CozeRequest] 调用Coze流式工作流，参数:', params)
 
 		try {
-			const url = this.workflowUrl.replace(/^http:/, 'https:')
-			
-			// #ifdef H5
-			const eventSource = new EventSource(`${url}/stream`, {
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${this.apiKey}`
-				},
-				method: 'POST',
-				body: JSON.stringify(params)
-			})
-
-			eventSource.onmessage = (event) => {
-				try {
-					const data = JSON.parse(event.data)
-					onData(data)
-				} catch (e) {
-					console.warn('[CozeRequest] 解析流式数据失败:', e)
-				}
-			}
-
-			eventSource.onerror = (error) => {
-				console.error('[CozeRequest] 流式请求错误:', error)
-				eventSource.close()
-				onError('流式请求失败: ' + (error.message || error))
-			}
-
-			eventSource.onclose = () => {
-				console.log('[CozeRequest] 流式请求关闭')
-				onComplete()
-			}
-			// #endif
-
-			// #ifndef H5
-			// 小程序环境使用普通请求，模拟流式效果
 			const response = await uni.request({
-				url: this.workflowUrl,
+				url: `${this.baseURL}/v1/workflow/run`,
 				method: 'POST',
 				header: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${this.apiKey}`
+					'Authorization': `Bearer ${this.token}`,
+					'Content-Type': 'application/json'
 				},
-				data: params
+				data: {
+					workflow_id: this.workflowId,
+					parameters: params
+				}
 			})
+
+			console.log('[CozeRequest] 流式请求响应:', response)
 
 			if (response.statusCode === 200) {
 				const data = response.data
 				console.log('[CozeRequest] Coze工作流执行成功:', data)
+				// 直接传递原始数据给回调
 				onData(data)
 				onComplete()
 			} else {
-				console.error('[CozeRequest] Coze工作流执行失败，状态码:', response.statusCode)
-				onError(`工作流调用失败，状态码: ${response.statusCode}`)
+				console.error('[CozeRequest] Coze工作流执行失败，状态码:', response.statusCode, response.data)
+				const errorMsg = response.data?.msg || response.data?.error || `工作流调用失败，状态码: ${response.statusCode}`
+				onError(errorMsg)
 			}
-			// #endif
 		} catch (error) {
 			console.error('[CozeRequest] 调用Coze工作流异常:', error)
 			onError('调用工作流时发生异常: ' + (error.message || error))
@@ -138,25 +59,25 @@ class CozeRequest {
 	 * @returns {Promise<Object>} 工作流执行结果
 	 */
 	async generateTasks(params) {
-		if (!this.initConfig()) {
-			return {
-				success: false,
-				message: 'Coze配置未设置，请先配置工作流地址和API密钥'
-			}
-		}
-
 		console.log('[CozeRequest] 调用Coze工作流，参数:', params)
 
 		try {
+			const url = `${this.baseURL}/v1/workflow/run`
+
 			const response = await uni.request({
-				url: this.workflowUrl,
+				url: url,
 				method: 'POST',
 				header: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${this.apiKey}`
+					'Authorization': `Bearer ${this.token}`,
+					'Content-Type': 'application/json'
 				},
-				data: params
+				data: {
+					workflow_id: this.workflowId,
+					parameters: params
+				}
 			})
+
+			console.log('[CozeRequest] 非流式请求响应:', response)
 
 			if (response.statusCode === 200) {
 				const data = response.data
@@ -167,10 +88,10 @@ class CozeRequest {
 					message: '任务生成成功'
 				}
 			} else {
-				console.error('[CozeRequest] Coze工作流执行失败，状态码:', response.statusCode)
+				console.error('[CozeRequest] Coze工作流执行失败，状态码:', response.statusCode, response.data)
 				return {
 					success: false,
-					message: `工作流调用失败，状态码: ${response.statusCode}`
+					message: response.data?.msg || response.data?.error || `工作流调用失败，状态码: ${response.statusCode}`
 				}
 			}
 		} catch (error) {
@@ -192,13 +113,19 @@ class CozeRequest {
 	 * @returns {Object} 格式化的请求参数
 	 */
 	buildTaskParams(prompt, count, difficulty, userInfo = {}, feishuConfig = {}) {
+		// 构建用户信息字符串
+		const userInfoStr = JSON.stringify({
+			姓名: userInfo.name || '',
+			年级: userInfo.grade || '',
+			年龄: userInfo.age || '',
+			兴趣: userInfo.hobby || ''
+		})
+
 		return {
-			prompt: prompt,
+			content: prompt,
+			userInfo: userInfoStr,
 			task_count: count,
-			difficulty: difficulty,
-			user_info: userInfo,
-			feishu_config: feishuConfig,
-			format: 'json'
+			difficulty: difficulty
 		}
 	}
 }

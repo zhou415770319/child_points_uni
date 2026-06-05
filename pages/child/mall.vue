@@ -25,11 +25,12 @@
 					<text v-else class="gift-icon">🎁</text>
 				</view>
 				<text class="gift-name">{{ gift.name }}</text>
-				<text class="gift-price">⭐ {{ gift.price }} 积分</text>
+				<text class="gift-points">⭐ 需要 {{ gift.points }} 积分</text>
+				<text class="gift-price">🎁 奖励 {{ gift.price }} 积分</text>
 				<text class="gift-stock" :class="gift.stock > 0 ? 'available' : 'unavailable'">
 					{{ gift.stock > 0 ? '有货' : '缺货' }}
 				</text>
-				<button class="exchange-btn" :class="{ disabled: gift.stock <= 0 || balance < gift.price }" @click.stop="exchangeGift(gift)">
+				<button class="exchange-btn" :class="{ disabled: gift.stock <= 0 || balance < gift.points }" @click.stop="exchangeGift(gift)">
 					兑换
 				</button>
 			</view>
@@ -50,7 +51,11 @@
 					<view class="detail-info">
 						<view class="info-row">
 							<text class="info-label">需要积分</text>
-							<text class="info-value price">⭐ {{ selectedGift?.price }}</text>
+							<text class="info-value price">⭐ {{ selectedGift?.points }}</text>
+						</view>
+						<view class="info-row">
+							<text class="info-label">奖励积分</text>
+							<text class="info-value reward">🎁 {{ selectedGift?.price }}</text>
 						</view>
 						<view class="info-row">
 							<text class="info-label">剩余库存</text>
@@ -62,7 +67,7 @@
 				</view>
 				<view class="modal-footer">
 					<button class="btn btn-secondary" @click="closeDetailModal">取消</button>
-					<button class="btn btn-primary" :class="{ disabled: selectedGift?.stock <= 0 || balance < selectedGift?.price }" @click="confirmExchange">
+					<button class="btn btn-primary" :class="{ disabled: selectedGift?.stock <= 0 || balance < selectedGift?.points }" @click="confirmExchange">
 						确认兑换
 					</button>
 				</view>
@@ -125,8 +130,17 @@
 				try {
 					uni.showLoading({ title: '加载中...' })
 					
-					// 构建过滤条件，如果不是"全部"则添加分类过滤（使用中文名称）
-					const filter = category === '全部' ? {} : { category: category }
+					// 构建过滤条件：只展示上架状态的礼品
+					const filter = {}
+					
+					// 如果不是"全部"则添加分类过滤（使用中文名称）
+					if (category !== '全部') {
+						filter.category = category
+					}
+					
+					// 添加状态筛选：只展示上架状态的礼品
+					filter.status = '上架'
+					
 					const result = await feishuRequest.queryRecords('礼品表', filter)
 					
 					if (result.success && result.data && result.data.length > 0) {
@@ -135,9 +149,11 @@
 							id: item.record_id,
 							name: item.fields.name ? (Array.isArray(item.fields.name) && item.fields.name[0]?.text ? item.fields.name[0].text : item.fields.name) : '',
 							description: item.fields.description ? (Array.isArray(item.fields.description) && item.fields.description[0]?.text ? item.fields.description[0].text : item.fields.description) : '',
-							price: item.fields.price || 0,
+							points: item.fields.points || 0,    // 基础积分（需要的积分）
+							price: item.fields.price || 0,       // 奖励积分（兑换后获得的积分）
 							stock: item.fields.stock || 0,
 							category: item.fields.category || 'other',
+							status: item.fields.status || '下架',
 							fileToken: item.fields.image ? (item.fields.image[0]?.file_token || '') : ''
 						}))
 						
@@ -210,7 +226,7 @@
 					uni.showToast({ title: '该商品已缺货', icon: 'none' })
 					return
 				}
-				if (this.balance < gift.price) {
+				if (this.balance < gift.points) {
 					uni.showToast({ title: '积分不足', icon: 'none' })
 					return
 				}
@@ -218,13 +234,13 @@
 			},
 			async confirmExchange() {
 				if (!this.selectedGift) return
-				if (this.selectedGift.stock <= 0 || this.balance < this.selectedGift.price) {
+				if (this.selectedGift.stock <= 0 || this.balance < this.selectedGift.points) {
 					return
 				}
 
 				uni.showModal({
 					title: '确认兑换',
-					content: `确定用 ${this.selectedGift.price} 积分兑换 "${this.selectedGift.name}" 吗？`,
+					content: `确定用 ${this.selectedGift.points} 积分兑换 "${this.selectedGift.name}" 吗？`,
 					success: async (res) => {
 						if (res.confirm) {
 							try {
@@ -237,13 +253,15 @@
 										stock: this.selectedGift.stock - 1
 									})
 									
-									// 更新儿童积分
+									// 更新儿童积分：扣除需要的积分，加上奖励积分
+									const newBalance = this.balance - this.selectedGift.points + this.selectedGift.price
 									await feishuRequest.updateRecord('儿童表', child.id, {
-										total_points: this.balance - this.selectedGift.price
+										total_points: newBalance
 									})
 								}
 								
-								this.balance -= this.selectedGift.price
+								// 更新本地余额：扣除需要的积分，加上奖励积分
+								this.balance = this.balance - this.selectedGift.points + this.selectedGift.price
 								this.selectedGift.stock -= 1
 								this.closeDetailModal()
 								uni.showToast({ title: '🎉 兑换成功！', icon: 'success' })
@@ -391,6 +409,13 @@
 		margin-bottom: 8rpx;
 	}
 
+	.gift-points {
+		font-size: 24rpx;
+		color: #666;
+		display: block;
+		margin-bottom: 8rpx;
+	}
+
 	.gift-stock {
 		font-size: 22rpx;
 		display: block;
@@ -467,14 +492,15 @@
 	}
 
 	.detail-image {
-		width: 160rpx;
-		height: 160rpx;
-		background-color: #fff3e0;
-		border-radius: 20rpx;
+		width: 100%;
+		height: 320rpx;
+		background-color: #f5f5f5;
+		border-radius: 16rpx;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		margin: 0 auto 25rpx;
+		margin-bottom: 25rpx;
+		overflow: hidden;
 	}
 
 	.detail-icon {
@@ -520,6 +546,10 @@
 
 		&.price {
 			color: #ff9500;
+		}
+
+		&.reward {
+			color: #4caf50;
 		}
 	}
 

@@ -52,13 +52,19 @@
 				<!-- 进行中状态 -->
 				<template v-else-if="task.status === '进行中'">
 					<button class="action-btn pause" @click="pauseTask">暂停</button>
-					<button class="action-btn complete" @click="showSubmitModal = true">提交</button>
+					<button class="action-btn complete" @click="handleSubmit">提交</button>
 				</template>
 				
 				<!-- 暂停状态 -->
 				<template v-else-if="task.status === '暂停'">
 					<button class="action-btn resume" @click="resumeTask">继续</button>
-					<button class="action-btn complete" @click="showSubmitModal = true">提交</button>
+					<button class="action-btn complete" @click="handleSubmit">提交</button>
+				</template>
+				
+				<!-- 待审核状态 -->
+				<template v-else-if="task.status === '待审核'">
+					<button class="action-btn secondary" @click="goBack">返回</button>
+					<button class="action-btn disabled">待审核</button>
 				</template>
 				
 				<!-- 已完成状态 -->
@@ -117,9 +123,9 @@
 					<text class="modal-close" @click="showSubmitModal = false">✕</text>
 				</view>
 				<view class="modal-body">
-					<!-- 文件上传区域 -->
-					<view class="upload-section">
-						<text class="upload-title">📷 上传证明图片</text>
+					<!-- 需要审核的任务显示上传区域 -->
+					<view class="upload-section" v-if="task?.need_audit">
+					<text class="upload-title">📷 上传证明图片</text>
 						<view class="upload-list">
 							<view class="upload-item" v-for="(file, index) in uploadedFiles" :key="index">
 								<image class="upload-image" :src="file.path" mode="aspectFill" />
@@ -132,7 +138,7 @@
 						</view>
 					</view>
 
-					<!-- 备注信息 -->
+					<!-- 备注信息（所有任务都显示） -->
 					<view class="remark-section">
 						<text class="remark-title">📝 备注信息</text>
 						<textarea 
@@ -284,7 +290,8 @@
 								completed: taskData.fields.status === '已完成',
 								elapsed_time: taskData.fields.elapsed_time || 0,  // 初始化累计时间
 								child_id: childId,
-								child_name: this.getChildName(childId)
+								child_name: this.getChildName(childId),
+								need_audit: taskData.fields.need_audit || false
 							}
 							
 							// 如果任务已完成，尝试获取AI评价
@@ -497,6 +504,20 @@
 			},
 			
 			/**
+			 * 处理提交（判断是否需要审核）
+			 */
+			handleSubmit() {
+				// 判断是否需要审核
+				if (this.task.need_audit) {
+					// 需要审核，显示提交弹框（带上传区域）
+					this.showSubmitModal = true
+				} else {
+					// 不需要审核，直接提交完成
+					this.submitTask()
+				}
+			},
+			
+			/**
 			 * 提交任务（带文件和备注）
 			 */
 			async submitTask() {
@@ -507,9 +528,12 @@
 					
 					this.stopTimer()
 					
+					// 判断是否需要审核
+					const needApproval = this.task.need_audit
+					
 					// 准备提交数据
 					const updateData = {
-						status: '已完成',
+						status: needApproval ? '待审核' : '已完成',
 						elapsed_time: this.task.elapsed_time || 0
 					}
 					
@@ -527,14 +551,19 @@
 					const result = await feishuRequest.updateRecord('任务表', this.task.id, updateData)
 					
 					if (result.success) {
-						this.task.status = '已完成'
+						this.task.status = updateData.status
 						this.task.completed = true
 						
-						// 模拟AI评价
-						this.aiEvaluation = this.getMockAiEvaluation()
+						if (!needApproval) {
+							// 不需要审核，直接获得积分
+							this.aiEvaluation = this.getMockAiEvaluation()
+							uni.showToast({ title: `+${this.task.base_points} 积分`, icon: 'success' })
+						} else {
+							// 需要审核，等待审核结果
+							uni.showToast({ title: '提交成功，等待审核', icon: 'success' })
+						}
 						
 						this.showSubmitModal = false
-						uni.showToast({ title: `+${this.task.base_points} 积分`, icon: 'success' })
 					} else {
 						uni.showToast({ title: '提交失败', icon: 'none' })
 					}
