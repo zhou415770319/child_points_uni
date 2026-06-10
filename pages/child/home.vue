@@ -201,15 +201,33 @@
 							this.todayTasks = result.data.tasks.map(item => {
 								const title = this.parseTextField(item.fields.title)
 								const description = this.parseTextField(item.fields.description)
+								
+								// 处理 child_id 字段，确保是字符串格式
+								let childIdValue = item.fields.child_id || ''
+								if (Array.isArray(childIdValue)) {
+									if (childIdValue[0] && childIdValue[0].text) {
+										childIdValue = childIdValue[0].text
+									} else if (childIdValue[0] && typeof childIdValue[0] === 'object' && childIdValue[0].record_id) {
+										childIdValue = childIdValue[0].record_id
+									} else if (childIdValue[0]) {
+										childIdValue = String(childIdValue[0])
+									} else {
+										childIdValue = ''
+									}
+								} else if (typeof childIdValue === 'object') {
+									childIdValue = childIdValue.text || childIdValue.record_id || ''
+								}
+								
 								return {
-									id: item.record_id,
+									id: item.fields.id || '', // 使用用户自定义的任务ID（fields.id）
+									record_id: item.record_id, // 飞书系统的record_id（用于更新记录）
 									title: title,
 									description: description,
 									type: item.fields.type || '',
 									type_text: item.fields.type_text || '',
 									difficulty: item.fields.difficulty || '简单',
 									base_points: item.fields.base_points || 10,
-									child_id: item.fields.child_id || '',
+									child_id: String(childIdValue).trim(), // 确保是字符串格式
 									status: item.fields.status || '未开始',
 									completed: item.fields.status === '已完成',
 									elapsed_time: item.fields.elapsed_time || 0,
@@ -563,10 +581,6 @@
 						elapsed_time: task.elapsed_time || 0
 					}
 					
-					if (remark.trim()) {
-						updateData.remark = remark.trim()
-					}
-					
 					const result = await feishuRequest.updateRecord('任务表', task.id, updateData)
 					
 					if (result.success) {
@@ -690,7 +704,8 @@
 			async logoutFromChild() {
 				try {
 					await UserManager.logoutChild()
-					uni.reLaunch({ url: '/pages/index/index' })
+					// 跳转到登录页面（pages.json 中配置的首页是 pages/login）
+					uni.reLaunch({ url: '/pages/login' })
 				} catch (error) {
 					console.error('[Child Home] 退出失败:', error)
 				}
@@ -714,7 +729,12 @@
 			 * 跳转到任务详情页面
 			 */
 			goToTaskDetail(task) {
-				uni.navigateTo({ url: `/pages/child/task-detail?id=${task.id}` })
+				console.log('[Home] 点击任务，跳转详情页:', task)
+				console.log('[Home] 任务ID:', task.id, 'record_id:', task.record_id, 'child_id:', task.child_id)
+				
+				// 将任务信息序列化为JSON字符串传递
+				const taskData = encodeURIComponent(JSON.stringify(task))
+				uni.navigateTo({ url: `/pages/child/task-detail?task=${taskData}` })
 			},
 			
 			/**

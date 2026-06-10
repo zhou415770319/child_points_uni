@@ -46,9 +46,14 @@ class FeishuRequest {
 	 * 获取配置
 	 * @private
 	 */
-	getConfig() {
+	async getConfig() {
 		const config = feishuApi.getConfig()
-		if (!config || !config.baseToken) {
+		if (!config) {
+			throw new Error('飞书配置未设置，请先配置多维表格Token')
+		}
+		
+		// 使用直接配置的 baseToken
+		if (!config.baseToken) {
 			throw new Error('飞书配置未设置，请先配置多维表格Token')
 		}
 		this.baseToken = config.baseToken
@@ -173,7 +178,7 @@ class FeishuRequest {
 		}
 		
 		try {
-			this.getConfig()
+			await this.getConfig()
 			const tableId = this.getTableIdByName(tableName)
 			
 			await this.initCloudObject()
@@ -218,7 +223,7 @@ class FeishuRequest {
 		}
 		
 		try {
-			this.getConfig()
+			await this.getConfig()
 			const tableId = this.getTableIdByName(tableName)
 			
 			await this.initCloudObject()
@@ -418,7 +423,7 @@ class FeishuRequest {
 		}
 		
 		try {
-			this.getConfig()
+			await this.getConfig()
 			const tableId = this.getTableIdByName(tableName)
 			
 			await this.initCloudObject()
@@ -440,10 +445,11 @@ class FeishuRequest {
 	/**
 	 * 上传文件到飞书云文档
 	 * @param {string} filePath - 本地文件路径
+	 * @param {string|null} objToken - 多维表格的 obj_token（从知识库获取），为空则使用 baseToken
 	 * @returns {Promise<Object>} 上传结果，包含 fileToken
 	 */
-	async uploadFile(filePath) {
-		console.log('[FeishuRequest] 上传文件:', filePath)
+	async uploadFile(filePath, objToken = null) {
+		console.log('[FeishuRequest] 上传文件:', filePath, 'objToken:', objToken ? objToken.substring(0, 10) + '...' : 'null(使用baseToken)')
 		
 		if (USE_MOCK) {
 			return {
@@ -453,10 +459,11 @@ class FeishuRequest {
 		}
 		
 		try {
-			this.getConfig()
+			await this.getConfig()
 			
-			const fileName = filePath.split('/').pop()
-			console.log('[FeishuRequest] 读取文件内容:', fileName)
+			// 提取文件名（处理各种路径格式）
+			const fileName = filePath.split('/').pop().split('\\').pop()
+			console.log('[FeishuRequest] 文件名:', fileName)
 			
 			let fileContentBase64 = null
 			
@@ -464,9 +471,14 @@ class FeishuRequest {
 				fileContentBase64 = await new Promise((resolve, reject) => {
 					uni.getFileSystemManager().readFile({
 						filePath: filePath,
-						encoding: 'base64',
-						success: (res) => resolve(res.data),
-						fail: (error) => reject(error)
+						success: (res) => {
+							console.log('[FeishuRequest] 文件读取成功，base64长度:', res.data ? res.data.length : 0)
+							resolve(res.data)
+						},
+						fail: (error) => {
+							console.error('[FeishuRequest] 文件读取失败:', error)
+							reject(error)
+						}
 					})
 				})
 			} else {
@@ -480,9 +492,20 @@ class FeishuRequest {
 				})
 			}
 			
+			if (!fileContentBase64) {
+				console.error('[FeishuRequest] 文件内容为空')
+				return {
+					success: false,
+					message: '文件内容为空'
+				}
+			}
+			
+			console.log('[FeishuRequest] 文件大小:', fileContentBase64.length * 0.75, '字节')
+			
 			await this.initCloudObject()
 			return this.feishutools.uploadFile({
 				baseToken: this.baseToken,
+				parentNode: objToken || this.baseToken,  // 优先使用 objToken，否则用 baseToken
 				fileName: fileName,
 				fileContentBase64: fileContentBase64
 			})
@@ -492,6 +515,73 @@ class FeishuRequest {
 				success: false,
 				message: '上传失败: ' + error.message
 			}
+		}
+	}
+
+	/**
+	 * 通过 baseToken 获取知识库节点信息（用于获取 obj_token）
+	 * @returns {Promise<Object>} 包含 objToken 的结果
+	 */
+	async getNodeByToken() {
+		console.log('[FeishuRequest] 获取知识库节点信息...')
+		
+		if (USE_MOCK) {
+			return {
+				success: true,
+				objToken: 'mock_obj_token_' + Date.now()
+			}
+		}
+		
+		try {
+			await this.getConfig()
+			
+			await this.initCloudObject()
+			return this.feishutools.getNodeByToken({
+				baseToken: this.baseToken
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 获取知识库节点信息失败:', error.message)
+			return {
+				success: false,
+				message: '获取节点信息失败: ' + error.message
+			}
+		}
+	}
+
+	/**
+	 * 获取单条记录（通过 record_id）
+	 * @param {string} tableName - 表名
+	 * @param {string} recordId - 记录ID
+	 * @returns {Promise<Object|null>} 记录数据或null
+	 */
+	async getRecord(tableName, recordId) {
+		console.log('[FeishuRequest] 获取单条记录，表名:', tableName, '记录ID:', recordId)
+		
+		if (USE_MOCK) {
+			return null
+		}
+		
+		try {
+			await this.getConfig()
+			const tableId = this.getTableIdByName(tableName)
+			
+			await this.initCloudObject()
+			const result = await this.feishutools.getRecord({
+				baseToken: this.baseToken,
+				tableId: tableId,
+				recordId: recordId
+			})
+			
+			if (result.success && result.data) {
+				return {
+					success: true,
+					data: result.data
+				}
+			}
+			return null
+		} catch (error) {
+			console.error('[FeishuRequest] 获取单条记录失败:', error.message)
+			return null
 		}
 	}
 
@@ -514,7 +604,7 @@ class FeishuRequest {
 		}
 		
 		try {
-			this.getConfig()
+			await this.getConfig()
 			const tableId = this.getTableIdByName(tableName)
 			
 			await this.initCloudObject()
@@ -551,7 +641,7 @@ class FeishuRequest {
 		}
 		
 		try {
-			this.getConfig()
+			await this.getConfig()
 			const tableId = this.getTableIdByName(tableName)
 			
 			await this.initCloudObject()
@@ -588,7 +678,7 @@ class FeishuRequest {
 		}
 		
 		try {
-			this.getConfig()
+			await this.getConfig()
 			const tableId = this.getTableIdByName(tableName)
 			
 			await this.initCloudObject()
@@ -637,7 +727,7 @@ class FeishuRequest {
 		}
 		
 		try {
-			this.getConfig()
+			await this.getConfig()
 			
 			// 获取需要的表ID映射
 			const tables = {}

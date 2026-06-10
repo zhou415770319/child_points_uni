@@ -37,6 +37,17 @@
 					<text class="modal-close" @click="closeModal">✕</text>
 				</view>
 				<view class="modal-body">
+					<!-- 头像上传 -->
+					<view class="form-item avatar-upload-item">
+						<ImageUploader 
+							:value="avatarFiles" 
+							:maxCount="1"
+							title="👤 头像"
+							:existing="avatarExisting"
+							ref="avatarUploaderRef"
+							@input="handleAvatarChange"
+						/>
+					</view>
 					<!-- 姓名输入 -->
 					<view class="form-item">
 						<text class="form-label">姓名</text>
@@ -49,15 +60,14 @@
 						<input class="form-input" type="number" v-model="formData.age" placeholder="请输入年龄" />
 					</view>
 					
-					<!-- 年级选择：使用picker组件 -->
+					<!-- 年级选择：使用 uni-data-select 组件 -->
 					<view class="form-item">
 						<text class="form-label">年级</text>
-						<picker mode="selector" :range="grades" @change="onGradeChange">
-							<view class="form-picker">
-								{{ formData.grade || '请选择年级' }}
-								<text class="picker-arrow">›</text>
-							</view>
-						</picker>
+						<uni-data-select 
+							v-model="formData.grade" 
+							:localdata="gradeOptions" 
+							placeholder="请选择年级"
+						/>
 					</view>
 					
 					<!-- 爱好选择：点击弹出多选弹窗 -->
@@ -111,12 +121,16 @@
 	import CategoryManager from '@/common/category-manager.js'
 	import CacheManager from '@/common/cache-manager.js'
 	import UserManager from '@/common/user-manager.js'
+	import ImageUploader from '@/components/ImageUploader.vue'
 
 	/**
 	 * 儿童管理页面组件
 	 * 功能：展示儿童列表、添加/编辑/删除儿童信息
 	 */
 	export default {
+		components: {
+			ImageUploader
+		},
 		data() {
 			return {
 				children: [],           // 儿童列表数据
@@ -128,7 +142,9 @@
 					grade: '',          // 年级（通过select选择）
 					hobby: []           // 爱好（多选）
 				},
-				grades: [],            // 年级选项列表（从分类表获取）
+				avatarFiles: [],       // 头像文件列表（与 ImageUploader v-model 绑定）
+				avatarExisting: [],    // 已有头像列表（格式：[{ url, fileToken }]）
+				gradeOptions: [],      // 年级选项列表（格式：[{value, label}]）
 				hobbies: [],           // 爱好选项列表（从分类表获取）
 				showHobbyPicker: false // 爱好多选弹窗显示状态
 			}
@@ -136,9 +152,9 @@
 		/**
 		 * 页面加载时初始化数据
 		 */
-		onLoad() {
-			this.loadCategories()  // 加载分类数据（年级、爱好）
-			this.loadChildren()    // 加载儿童列表
+		async onLoad() {
+			await this.loadCategories()  // 加载分类数据（年级、爱好）
+			await this.loadChildren()    // 加载儿童列表
 		},
 		methods: {
 			/**
@@ -146,14 +162,27 @@
 			 * 从CategoryManager获取缓存的分类数据，若无则使用默认值
 			 */
 			async loadCategories() {
+				// 先确保分类数据已加载（如果缓存为空，会从云函数加载）
+				await CategoryManager.loadCategories('children-page')
+				
 				const gradeOptions = CategoryManager.getGradeOptions()
 				const hobbyOptions = CategoryManager.getHobbyOptions()
 				
-				// 设置年级选项
+				// 设置年级选项（uni-data-select 需要 [{value, text}] 格式）
 				if (gradeOptions.length > 0) {
-					this.grades = gradeOptions.map(g => g.label)
+					this.gradeOptions = gradeOptions.map(item => ({
+						value: item.value,
+						text: item.label || item.text || item.value
+					}))
 				} else {
-					this.grades = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级']
+					this.gradeOptions = [
+						{ value: '一年级', text: '一年级' },
+						{ value: '二年级', text: '二年级' },
+						{ value: '三年级', text: '三年级' },
+						{ value: '四年级', text: '四年级' },
+						{ value: '五年级', text: '五年级' },
+						{ value: '六年级', text: '六年级' }
+					]
 				}
 				
 				// 设置爱好选项
@@ -214,12 +243,19 @@
 									: (Array.isArray(item.fields.hobby) ? item.fields.hobby : [])
 							}
 							
+							// 保存原始 file_token 用于编辑时保留
+							let avatarFileToken = ''
+							if (item.fields.avatar && item.fields.avatar.length > 0) {
+								avatarFileToken = item.fields.avatar[0].file_token || ''
+							}
+							
 							return {
 								id: item.record_id,
 								name: item.fields.name[0].text || '',
 								avatar: avatarUrl || '👦',
+								avatarFileToken: avatarFileToken,
 								age: item.fields.age || 0,
-								grade: item.fields.grade || '',
+								grade: item.fields.grade?.[0]?.text || item.fields.grade || '',
 								hobby: hobbyData,
 								total_points: item.fields.total_points || 0,
 								parent_account: item.fields.parent_account || ''
@@ -254,15 +290,21 @@
 					grade: child.grade,
 					hobby: Array.isArray(child.hobby) ? child.hobby : []
 				}
+				// 设置已有头像（用于 ImageUploader 组件显示）
+				if (child.avatar && child.avatar.startsWith('http') && child.avatarFileToken) {
+					this.avatarExisting = [{ url: child.avatar, fileToken: child.avatarFileToken }]
+				} else {
+					this.avatarExisting = []
+				}
+				this.avatarFiles = []
 				this.showAddModal = true
 			},
 			/**
-			 * 年级选择器变更事件
-			 * @param {Object} e - 选择器事件对象
+			 * 处理头像变化事件
 			 */
-			onGradeChange(e) {
-				const value = e?.detail?.value !== undefined ? e.detail.value : e
-				this.formData.grade = this.grades[value]
+			handleAvatarChange(files) {
+				console.log('[children.vue] handleAvatarChange:', files)
+				this.avatarFiles = files
 			},
 			/**
 			 * 删除儿童（带确认弹窗）
@@ -313,12 +355,16 @@
 				this.showAddModal = false
 				this.editingChild = null
 				this.formData = { name: '', age: '', grade: '', hobby: [] }
+				this.avatarFiles = []
+				this.avatarExisting = []
 			},
 			/**
 			 * 保存儿童信息（添加或编辑）
 			 */
 			async saveChild() {
 				// 表单验证
+				console.log('this.formData----',this.formData,this.avatarFiles);
+				debugger
 				if (!this.formData.name || !this.formData.age || !this.formData.grade) {
 					uni.showToast({ title: '请填写完整信息', icon: 'none' })
 					return
@@ -331,6 +377,21 @@
 					const parent = await UserManager.getCurrentParent()
 					const parentAccount = parent?.phone || ''
 					
+					// 处理头像上传
+					let avatarFileToken = ''
+					let avatarUrl = ''
+					if (this.avatarFiles.length > 0 && this.$refs.avatarUploaderRef) {
+						// 用户选择了新头像，上传获取 file_token
+						const uploadResult = await this.$refs.avatarUploaderRef.uploadAndGetFieldValue()
+						if (uploadResult && uploadResult.value && uploadResult.value.length > 0) {
+							avatarFileToken = uploadResult.value[0].file_token || ''
+						}
+					} else if (this.editingChild && this.avatarExisting.length > 0) {
+						// 编辑模式且未更换头像，保留原 file_token
+						avatarFileToken = this.avatarExisting[0].fileToken || ''
+						avatarUrl = this.avatarExisting[0].url || ''
+					}
+					
 					// 构建飞书多维表格的数据格式（直接传字符串，不要包装成数组）
 					const childData = {
 						name: this.formData.name,
@@ -340,7 +401,11 @@
 						total_points: this.editingChild ? this.editingChild.total_points : 0,  // 编辑时保留原积分，新增时设为0
 						parent_account: parentAccount
 					}
-
+					
+					// 有头像 file_token 则添加到数据中
+					if (avatarFileToken) {
+						childData.avatar = avatarFileToken
+					}
 
 					if (this.editingChild) {
 						// 编辑模式：更新已有记录
@@ -351,7 +416,9 @@
 								name: this.formData.name,
 								age: parseInt(this.formData.age),
 								grade: this.formData.grade,
-								hobby: this.formData.hobby
+								hobby: this.formData.hobby,
+								avatar: avatarUrl || this.editingChild.avatar,
+								avatarFileToken: avatarFileToken || this.editingChild.avatarFileToken
 							}
 							const index = this.children.findIndex(c => c.id === this.editingChild.id)
 							if (index >= 0) {
@@ -373,7 +440,8 @@
 								age: parseInt(this.formData.age),
 								grade: this.formData.grade,
 								hobby: this.formData.hobby,
-								parent_account: parentAccount
+								parent_account: parentAccount,
+								avatarFileToken: avatarFileToken || ''
 							})
 							// 添加成功后清除缓存
 							await CacheManager.refreshAfterAdd('儿童表', 'children_cache')
@@ -671,6 +739,15 @@
 		&.active {
 			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 			color: #fff;
+		}
+	}
+
+	.avatar-upload-item {
+		.upload-section {
+			margin-bottom: 0;
+		}
+		.upload-list {
+			justify-content: flex-start;
 		}
 	}
 </style>

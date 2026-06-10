@@ -188,12 +188,21 @@ class UserManager {
             avatarUrl = avatarUrlMap[fileToken] || ''
           }
           
+          // 处理 name 字段，支持数组格式和字符串格式
+          let name = item.fields.name || ''
+          if (Array.isArray(name) && name[0] && name[0].text) {
+            name = name[0].text
+          } else if (typeof name === 'object' && name.text) {
+            name = name.text
+          }
+          name = String(name).trim()
+          
           return {
             id: item.fields.child_id,
             child_id: item.fields.child_id || '',
             parent_account: item.fields.parent_account || '',
-            name: item.fields.name[0].text || '',
-            avatar: avatarUrl || '👦',
+            name: name || '未命名',
+            avatar: avatarUrl || '',
             age: item.fields.age || 0,
             grade: item.fields.grade || '',
             hobby: item.fields.hobby ? (typeof item.fields.hobby === 'string' ? item.fields.hobby.split('、') : item.fields.hobby) : [],
@@ -233,6 +242,19 @@ class UserManager {
     uni.removeStorageSync('currentChild')
     uni.removeStorageSync('userRole')
     console.log('[UserManager] 用户缓存已清除')
+  }
+
+  /**
+   * 儿童退出登录
+   */
+  static async logoutChild() {
+    try {
+      this.clearUserCache()
+      console.log('[UserManager] 儿童账号已退出')
+    } catch (error) {
+      console.error('[UserManager] 退出儿童账号失败:', error)
+      throw error
+    }
   }
 
   /**

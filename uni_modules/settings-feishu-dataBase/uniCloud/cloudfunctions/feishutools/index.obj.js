@@ -239,16 +239,139 @@ async function testConnection() {
 	
 	try {
 		await getAccessToken()
-		console.log('[FeishuTools] 测试连接成功')
-		return {
-			success: true,
-			message: '连接成功'
-		}
 	} catch (error) {
-		console.error('[FeishuTools] 测试连接失败:', error.message)
+		console.error('[FeishuTools] 测试连接失败:', error)
 		return {
 			success: false,
-			message: error.message
+			message: '连接失败: ' + error.message
+		}
+	}
+	
+	return {
+		success: true,
+		message: '连接成功'
+	}
+}
+
+/**
+ * 从知识库获取多维表格的 app_token
+ * @param {string} token - 知识库节点token（从URL的wiki/后的部分获取）
+ * @param {string} obj_type - 对象类型，固定为 'wiki'
+ * @returns {Promise<Object>} { success: boolean, appToken: string, message: string }
+ */
+async function getBitableAppTokenFromWiki(token, obj_type) {
+	console.log('[FeishuTools] 从知识库获取多维表格app_token, token:', token, ', obj_type:', obj_type)
+	
+	if (!token) {
+		console.error('[FeishuTools] 错误：知识库节点token为空')
+		throw new Error('知识库节点token不能为空')
+	}
+	
+	const tokenResult = await getAccessToken()
+	
+	// 调用知识库节点信息API
+	// 参考文档：https://open.feishu.cn/document/server-docs/docs/wiki-v2/space-node/get_node
+	// 使用 GET 请求，通过 URL 查询参数传递 token 和 obj_type
+	const queryParams = 'token=' + encodeURIComponent(token) + '&obj_type=' + encodeURIComponent(obj_type || 'wiki')
+	const url = 'https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node?' + queryParams
+	
+	console.log('[FeishuTools] 调用飞书API: GET', url)
+	
+	const response = await uniCloud.httpclient.request(url, {
+		method: 'GET',
+		headers: {
+			'Authorization': 'Bearer ' + tokenResult.accessToken
+		},
+		dataType: 'json'
+	})
+	
+	console.log('[FeishuTools] 知识库节点响应:', JSON.stringify(response.data))
+	
+	if (response.data.code === 0) {
+		const node = response.data.data.node
+		console.log('[FeishuTools] 节点类型:', node.obj_type)
+		
+		// 检查节点类型是否为多维表格
+		if (node.obj_type === 'bitable') {
+			const appToken = node.obj_token
+			console.log('[FeishuTools] 获取多维表格app_token成功:', appToken)
+			return {
+				success: true,
+				appToken: appToken,
+				message: '获取成功'
+			}
+		} else {
+			console.error('[FeishuTools] 节点类型不是多维表格:', node.obj_type)
+			return {
+				success: false,
+				appToken: null,
+				message: '节点类型不是多维表格，当前类型: ' + node.obj_type
+			}
+		}
+	} else {
+		console.error('[FeishuTools] 获取知识库节点信息失败:', JSON.stringify(response.data))
+		return {
+			success: false,
+			appToken: null,
+			message: '获取知识库节点信息失败: ' + JSON.stringify(response.data)
+		}
+	}
+}
+
+/**
+ * 通过 baseToken 获取知识库节点信息（用于获取 obj_token）
+ * @param {Object} params
+ * @param {string} params.baseToken - 知识库节点token（baseToken）
+ * @returns {Promise<Object>} { success: boolean, objToken: string, message: string }
+ */
+async function getNodeByToken(params) {
+	console.log('[FeishuTools] 获取知识库节点信息:', JSON.stringify(params))
+	
+	const { baseToken } = params
+	
+	if (!baseToken) {
+		console.error('[FeishuTools] 错误：baseToken为空')
+		return {
+			success: false,
+			objToken: null,
+			message: 'baseToken不能为空'
+		}
+	}
+	
+	const tokenResult = await getAccessToken()
+	
+	// 调用知识库节点信息API
+	// 参考文档：https://open.feishu.cn/document/server-docs/docs/wiki-v2/space-node/get_node
+	const queryParams = 'token=' + encodeURIComponent(baseToken) + '&obj_type=' + encodeURIComponent('wiki')
+	const url = 'https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node?' + queryParams
+	
+	console.log('[FeishuTools] 调用飞书API: GET', url)
+	
+	const response = await uniCloud.httpclient.request(url, {
+		method: 'GET',
+		headers: {
+			'Authorization': 'Bearer ' + tokenResult.accessToken
+		},
+		dataType: 'json'
+	})
+	
+	console.log('[FeishuTools] 知识库节点响应:', JSON.stringify(response.data))
+	
+	if (response.data.code === 0) {
+		const node = response.data.data.node
+		console.log('[FeishuTools] 节点类型:', node.obj_type)
+		
+		return {
+			success: true,
+			objToken: node.obj_token,
+			message: '获取成功'
+		}
+	} else {
+		console.error('[FeishuTools] 获取知识库节点信息失败:', JSON.stringify(response.data))
+		return {
+			success: false,
+			objToken: null,
+			message: '获取知识库节点信息失败: ' + JSON.stringify(response.data)
 		}
 	}
 }
@@ -431,6 +554,48 @@ async function addRecord(params, retryCount = 0) {
 		}
 		
 		throw new Error('添加失败: ' + JSON.stringify(response.data))
+	}
+}
+
+/**
+ * 获取单条记录
+ */
+async function getRecord(params) {
+	console.log('[FeishuTools] 获取单条记录:', JSON.stringify(params))
+	
+	const { baseToken, tableId, recordId } = params
+	
+	if (!baseToken || !tableId || !recordId) {
+		throw new Error('baseToken、tableId和recordId不能为空')
+	}
+	
+	const tokenResult = await getAccessToken()
+	const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${baseToken}/tables/${tableId}/records/${recordId}`
+	
+	console.log('[FeishuTools] 请求URL:', url)
+	const response = await uniCloud.httpclient.request(url, {
+		method: 'GET',
+		headers: {
+			'Authorization': 'Bearer ' + tokenResult.accessToken
+		},
+		dataType: 'json'
+	})
+	
+	console.log('[FeishuTools] 获取响应:', JSON.stringify(response.data))
+	
+	if (response.data.code === 0) {
+		const record = response.data.data.record
+		return {
+			success: true,
+			data: {
+				record_id: record.record_id,
+				fields: record.fields,
+				createdTime: record.created_time,
+				updatedTime: record.updated_time
+			}
+		}
+	} else {
+		throw new Error('获取记录失败: ' + JSON.stringify(response.data))
 	}
 }
 
@@ -640,85 +805,120 @@ async function getImageUrls(params) {
 }
 
 /**
- * 上传文件到飞书云文档
+ * 上传文件到飞书云文档（用于多维表格图片字段）
  * @param {Object} params
- * @param {string} params.baseToken - 多维表格Token
+ * @param {string} params.baseToken - 多维表格Token (app_token)
  * @param {string} params.fileName - 文件名
  * @param {string} params.fileContentBase64 - base64编码的文件内容
  * @returns {Promise<Object>} 上传结果，包含 fileToken
  */
 async function uploadFile(params) {
-	console.log('[FeishuTools] 上传文件:', JSON.stringify(params))
+	console.log('[FeishuTools] 上传文件开始:', JSON.stringify({
+		baseToken: params.baseToken ? params.baseToken.substring(0, 10) + '...' : null,
+		fileName: params.fileName,
+		fileContentBase64Length: params.fileContentBase64 ? params.fileContentBase64.length : 0
+	}))
 	
-	const { baseToken, fileName, fileContentBase64 } = params
+	const { baseToken, parentNode, fileName, fileContentBase64 } = params
 	
 	if (!baseToken || !fileName || !fileContentBase64) {
-		throw new Error('baseToken、fileName和fileContentBase64不能为空')
+		console.error('[FeishuTools] 参数缺失:', { baseToken: !!baseToken, fileName: !!fileName, fileContentBase64: !!fileContentBase64, parentNode: !!parentNode })
+		return {
+			success: false,
+			message: '参数缺失：baseToken、fileName和fileContentBase64不能为空'
+		}
 	}
+	// 验证 baseToken 格式
 	
 	const tokenResult = await getAccessToken()
 	
 	const fileContent = Buffer.from(fileContentBase64, 'base64')
+	const fileSize = fileContent.length
 	
-	const url = `https://open.feishu.cn/open-apis/drive/v1/medias/upload_all?file_name=${encodeURIComponent(fileName)}&parent_type=bitable_image&parent_node=${baseToken}`
+	// 飞书上传 API 需要的完整参数
+	// 参考文档：https://open.feishu.cn/document/server-docs/docs/drive-v1/media/upload_all
+	// 参数说明：
+	// - file_name: 文件名（URL参数）
+	// - parent_type: bitable（多维表格，URL参数）
+	// - parent_node: 多维表格的 app_token（URL参数）
+	// - size: 文件大小（字节，URL参数）
+	// - file: 文件内容（multipart/form-data请求体）
+	
+	// 如果文件名没有扩展名，添加.jpg扩展名
+	let uploadFileName = fileName
+	if (!uploadFileName.includes('.')) {
+		uploadFileName = uploadFileName + '.jpg'
+	}
+	
+	// 根据飞书API文档，所有参数都放在请求体中（formData）
+	const url = 'https://open.feishu.cn/open-apis/drive/v1/medias/upload_all'
 	
 	console.log('[FeishuTools] 请求URL:', url)
-	
-	return new Promise((resolve, reject) => {
-		const https = require('https')
-		const urlObj = new URL(url)
+
+	try {
+		// 根据文件名获取正确的 Content-Type
+		const ext = uploadFileName.split('.').pop().toLowerCase()
+		let contentType = 'image/webp'
+		// if (ext === 'png') {
+		// 	contentType = 'image/png'
+		// } else if (ext === 'gif') {
+		// 	contentType = 'image/gif'
+		// } else if (ext === 'webp') {
+		// 	contentType = 'image/webp'
+		// }
 		
-		const boundary = '---7MA4YWxkTrZu0gW'
-		const boundaryStart = Buffer.from('--' + boundary + '\r\n', 'utf8')
-		const contentDisposition = Buffer.from('Content-Disposition: form-data; name="file"; filename="' + fileName + '"\r\n', 'utf8')
-		const contentType = Buffer.from('Content-Type: application/octet-stream\r\n\r\n', 'utf8')
-		const boundaryEnd = Buffer.from('\r\n--' + boundary + '--\r\n', 'utf8')
-		
-		const body = Buffer.concat([boundaryStart, contentDisposition, contentType, fileContent, boundaryEnd])
-		
-		const options = {
-			hostname: urlObj.hostname,
-			port: 443,
-			path: urlObj.pathname + urlObj.search,
+		console.log('[FeishuTools] 上传文件名:', uploadFileName)
+		console.log('[FeishuTools] parent_node:', parentNode || baseToken, '(parentNode:', parentNode, ', baseToken:', baseToken, ')')
+		console.log('[FeishuTools] size:', fileSize)
+		console.log('[FeishuTools] 文件内容长度:', fileContent.length)
+		console.log('[FeishuTools] AccessToken长度:', tokenResult.accessToken ? tokenResult.accessToken.length : 0)
+		console.log('[FeishuTools] fileContentBase64:', fileContentBase64)
+		// let form = {
+		// 		file_name: uploadFileName,
+		// 使用 uniCloud.httpclient 的 formData 选项，自动处理 multipart 格式
+		// 根据飞书API文档，所有参数都放在formData中
+		const response = await uniCloud.httpclient.request(url, {
 			method: 'POST',
 			headers: {
 				'Authorization': 'Bearer ' + tokenResult.accessToken,
-				'Content-Type': 'multipart/form-data; boundary=' + boundary,
-				'Content-Length': body.length
+				'Content-Type': 'multipart/form-data; boundary=---7MA4YWxkTrZu0gW'
+			},
+			formData: {
+				file_name: uploadFileName,
+				parent_type: 'bitable_image',
+				parent_node: parentNode || baseToken,
+				size: fileSize.toString(),
+				file: fileContentBase64  // 直接传递二进制Buffer
+			},
+			dataType: 'json'
+		})
+		
+		console.log('[FeishuTools] 上传响应状态码:', response.status)
+		console.log('[FeishuTools] 上传响应头:', JSON.stringify(response.headers))
+		console.log('[FeishuTools] 上传响应:', JSON.stringify(response.data))
+		
+		if (response.data && response.data.code === 0) {
+			console.log('[FeishuTools] 上传成功，fileToken:', response.data.data.file_token)
+			return {
+				success: true,
+				fileToken: response.data.data.file_token
+			}
+		} else {
+			console.error('[FeishuTools] 上传失败，错误码:', response.data && response.data.code, '错误信息:', response.data && response.data.msg)
+			return {
+				success: false,
+				message: response.data && response.data.msg ? response.data.msg : '上传失败',
+				code: response.data && response.data.code
 			}
 		}
-		
-		const req = https.request(options, (res) => {
-			let data = ''
-			res.on('data', (chunk) => {
-				data += chunk
-			})
-			res.on('end', () => {
-				console.log('[FeishuTools] 上传响应:', data)
-				try {
-					const response = JSON.parse(data)
-					if (response.code === 0) {
-						resolve({
-							success: true,
-							fileToken: response.data.file_token
-						})
-					} else {
-						reject(new Error('上传失败: ' + JSON.stringify(response)))
-					}
-				} catch (e) {
-					reject(new Error('解析响应失败: ' + data))
-				}
-			})
-		})
-		
-		req.on('error', (e) => {
-			console.error('[FeishuTools] 请求错误:', e)
-			reject(new Error('请求失败: ' + e.message))
-		})
-		
-		req.write(body)
-		req.end()
-	})
+	} catch (error) {
+		console.error('[FeishuTools] 上传异常:', error.message)
+		console.error('[FeishuTools] 异常堆栈:', error.stack)
+		return {
+			success: false,
+			message: '上传异常: ' + error.message
+		}
+	}
 }
 
 /**
@@ -954,10 +1154,13 @@ module.exports = {
 	queryRecords,
 	searchRecords,
 	addRecord,
+	getRecord,
 	updateRecord,
 	deleteRecord,
 	batchAddRecords,
 	getImageUrls,
 	getHomeData,
-	uploadFile
+	uploadFile,
+	getBitableAppTokenFromWiki,
+	getNodeByToken
 }

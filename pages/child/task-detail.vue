@@ -125,17 +125,11 @@
 				<view class="modal-body">
 					<!-- 需要审核的任务显示上传区域 -->
 					<view class="upload-section" v-if="task?.need_audit">
-					<text class="upload-title">📷 上传证明图片</text>
-						<view class="upload-list">
-							<view class="upload-item" v-for="(file, index) in uploadedFiles" :key="index">
-								<image class="upload-image" :src="file.path" mode="aspectFill" />
-								<view class="upload-delete" @click="removeFile(index)">✕</view>
-							</view>
-							<view class="upload-add" @click="chooseImage" v-if="uploadedFiles.length < 9">
-								<text class="add-icon">+</text>
-								<text class="add-text">添加图片</text>
-							</view>
-						</view>
+						<ImageUploader 
+							v-model="uploadedFiles" 
+							:maxCount="9" 
+							ref="imageUploaderRef"
+						/>
 					</view>
 
 					<!-- 备注信息（所有任务都显示） -->
@@ -161,27 +155,61 @@
 
 <script>
 	import { feishuRequest } from '@/common/feishu-request.js'
+	import { feishuApi } from '@/uni_modules/settings-feishu-dataBase/src/utils/feishu-api.js'
 	import UserManager from '@/common/user-manager.js'
+	import ImageUploader from '@/components/ImageUploader.vue'
 
 	export default {
+		components: {
+			ImageUploader
+		},
 		data() {
 			return {
 				task: null,
-				taskId: '',
+				taskId: '',  // 业务ID（fields.id）
+				recordId: '',  // 飞书系统ID（record_id）
 				timer: null,
 				currentChild: null,  // 当前登录的儿童信息
 				children: [],  // 儿童列表，用于根据child_id获取儿童名称
 				showSubmitModal: false,  // 提交任务弹窗
-				uploadedFiles: [],  // 上传的文件列表
+				uploadedFiles: [],  // 上传的文件列表（与 ImageUploader 组件 v-model 绑定）
 				remark: '',  // 备注信息
 				aiEvaluation: null  // AI评价结果
 			}
 		},
 		async onLoad(options) {
-			if (options && options.id) {
-				this.taskId = options.id
-				await this.loadChildren()  // 确保先加载儿童列表
-				await this.loadTaskDetail()
+			if (options && options.task) {
+				try {
+					// 解析传递过来的任务信息
+					const taskData = JSON.parse(decodeURIComponent(options.task))
+					console.log('[Task Detail] 从首页接收任务信息:', taskData)
+					
+					// 先加载儿童列表，以便正确计算 child_name
+					await this.loadChildren()
+					
+					// 直接使用传递过来的任务信息，不需要再次查询
+					this.task = taskData
+					this.taskId = taskData.id || ''
+					this.recordId = taskData.record_id || ''
+					
+					// 重新计算 child_name（确保使用最新的儿童列表）
+					this.task.child_name = this.getChildName(this.task.child_id)
+					console.log('[Task Detail] 重新计算的儿童名称:', this.task.child_name)
+					
+					// 如果任务已完成，尝试获取AI评价
+					if (this.task.completed) {
+						await this.loadAiEvaluation()
+					}
+				} catch (error) {
+					console.error('[Task Detail] 解析任务信息失败:', error)
+					// 如果解析失败，回退到API查询方式
+					if (options.id) {
+						this.taskId = options.id
+						this.recordId = options.record_id || ''
+						await this.loadChildren()
+						await this.loadTaskDetail()
+					}
+				}
 			}
 		},
 		onUnload() {
@@ -198,6 +226,10 @@
 			
 			// 触发首页刷新任务列表
 			uni.$emit('refreshTasks')
+		},
+		onPullDownRefresh() {
+			console.log('[Task Detail] 下拉刷新，重新获取任务数据')
+			this.refreshTaskData()
 		},
 		methods: {
 			/**
@@ -244,72 +276,103 @@
 			async loadTaskDetail() {
 				try {
 					uni.showLoading({ title: '加载中...' })
+					console.log('loadTaskDetail----', this.recordId);
 					
-					const result = await feishuRequest.queryRecords('任务表')
+					if (!this.recordId) {
+						console.error('[Task Detail] recordId为空，无法查询任务详情')
+						this.task = null
+						uni.hideLoading()
+						return
+					}
 					
-					if (result.success && result.data && result.data.length > 0) {
-						const taskData = result.data.find(item => item.record_id === this.taskId)
+					// 通过 record_id 直接从飞书获取单条记录
+					const result = await feishuRequest.getRecord('任务表', this.recordId)
+					
+					if (result && result.success && result.data) {
+						const taskData = result.data
 						
-						if (taskData) {
-							const title = taskData.fields.title 
-								? (Array.isArray(taskData.fields.title) && taskData.fields.title[0] && taskData.fields.title[0].text 
-									? taskData.fields.title[0].text 
-									: taskData.fields.title)
-								: ''
-							const description = taskData.fields.description 
-								? (Array.isArray(taskData.fields.description) && taskData.fields.description[0] && taskData.fields.description[0].text 
-									? taskData.fields.description[0].text 
-									: taskData.fields.description)
-								: ''
-							
-							// 处理child_id字段
-							let childId = taskData.fields.child_id || ''
-							if (Array.isArray(childId)) {
-								if (childId[0] && childId[0].text) {
-									childId = childId[0].text
-								} else if (childId[0] && typeof childId[0] === 'object' && childId[0].record_id) {
-									// 如果是引用类型字段，提取record_id
-									childId = childId[0].record_id
-								} else if (childId[0]) {
-									childId = String(childId[0])
-								} else {
-									childId = ''
-								}
+						const title = taskData.fields.title 
+							? (Array.isArray(taskData.fields.title) && taskData.fields.title[0] && taskData.fields.title[0].text 
+								? taskData.fields.title[0].text 
+								: taskData.fields.title)
+							: ''
+						const description = taskData.fields.description 
+							? (Array.isArray(taskData.fields.description) && taskData.fields.description[0] && taskData.fields.description[0].text 
+								? taskData.fields.description[0].text 
+								: taskData.fields.description)
+							: ''
+						
+						// 处理child_id字段
+						let childId = taskData.fields.child_id || ''
+						if (Array.isArray(childId)) {
+							if (childId[0] && childId[0].text) {
+								childId = childId[0].text
+							} else if (childId[0] && typeof childId[0] === 'object' && childId[0].record_id) {
+								childId = childId[0].record_id
+							} else if (childId[0]) {
+								childId = String(childId[0])
+							} else {
+								childId = ''
 							}
-							childId = String(childId).trim()
-							
-							this.task = {
-								id: taskData.record_id,
-								title: title,
-								description: description,
-								type: taskData.fields.type || '',
-								type_text: taskData.fields.type_text || '',
-								difficulty: taskData.fields.difficulty || '简单',
-								base_points: taskData.fields.base_points || 10,
-								status: taskData.fields.status || '未开始',
-								completed: taskData.fields.status === '已完成',
-								elapsed_time: taskData.fields.elapsed_time || 0,  // 初始化累计时间
-								child_id: childId,
-								child_name: this.getChildName(childId),
-								need_audit: taskData.fields.need_audit || false
-							}
-							
-							// 如果任务已完成，尝试获取AI评价
-							if (this.task.completed) {
-								await this.loadAiEvaluation()
-							}
-						} else {
-							this.task = this.getMockTask()
+						}
+						childId = String(childId).trim()
+						
+						this.task = {
+							id: taskData.fields.id || '',
+							record_id: taskData.record_id,
+							title: title,
+							description: description,
+							type: taskData.fields.type || '',
+							type_text: taskData.fields.type_text || '',
+							difficulty: taskData.fields.difficulty || '简单',
+							base_points: taskData.fields.base_points || 10,
+							reward_points: taskData.fields.reward_points || 0,
+							status: taskData.fields.status || '未开始',
+							completed: taskData.fields.status === '已完成',
+							elapsed_time: taskData.fields.elapsed_time || 0,
+							child_id: childId,
+							child_name: this.getChildName(childId),
+							need_audit: taskData.fields.need_audit || false
+						}
+						
+						// 如果任务已完成，尝试获取AI评价
+						if (this.task.completed) {
+							await this.loadAiEvaluation()
 						}
 					} else {
-						this.task = this.getMockTask()
+						console.error('[Task Detail] 获取任务详情失败')
+						this.task = null
 					}
 				} catch (error) {
 					console.error('[Task Detail] 加载任务详情失败:', error)
-					this.task = this.getMockTask()
+					this.task = null
 				}
 				
 				uni.hideLoading()
+			},
+			
+			/**
+			 * 下拉刷新 - 从服务器重新获取任务数据
+			 */
+			async refreshTaskData() {
+				const wasRunning = this.timer !== null
+				if (wasRunning) {
+					this.stopTimer()
+				}
+				
+				try {
+					await this.loadChildren()
+					await this.loadTaskDetail()
+					
+					// 如果任务正在进行中，重启计时器（基于当前 elapsed_time 重新计算）
+					if (this.task && this.task.status === '进行中') {
+						this.startTimer()
+					}
+				} catch (error) {
+					console.error('[Task Detail] 刷新任务数据失败:', error)
+				} finally {
+					uni.stopPullDownRefresh()
+				}
 			},
 			
 			/**
@@ -348,20 +411,6 @@
 				return evaluations[Math.floor(Math.random() * evaluations.length)]
 			},
 			
-			getMockTask() {
-				return {
-					id: this.taskId,
-					title: '语文阅读30分钟',
-					description: '阅读一篇课文，并回答课后问题',
-					type: 'reading',
-					type_text: '阅读',
-					difficulty: '简单',
-					base_points: 10,
-					status: '未开始',
-					completed: false
-				}
-			},
-			
 			getTaskIcon(type) {
 				const icons = {
 					reading: '📖',
@@ -386,33 +435,7 @@
 				return texts[status] || status
 			},
 			
-			/**
-			 * 选择图片
-			 */
-			chooseImage() {
-				uni.chooseImage({
-					count: 9 - this.uploadedFiles.length,
-					sizeType: ['compressed'],
-					sourceType: ['album', 'camera'],
-					success: (res) => {
-						this.uploadedFiles = this.uploadedFiles.concat(res.tempFiles.map(file => ({
-							path: file.path,
-							size: file.size
-						})))
-					},
-					fail: (err) => {
-						console.error('[Task Detail] 选择图片失败:', err)
-						uni.showToast({ title: '选择图片失败', icon: 'none' })
-					}
-				})
-			},
-			
-			/**
-			 * 删除图片
-			 */
-			removeFile(index) {
-				this.uploadedFiles.splice(index, 1)
-			},
+			// chooseImage、removeFile 已由 ImageUploader 组件内部处理
 			
 			/**
 			 * 开始任务
@@ -423,7 +446,8 @@
 				try {
 					uni.showLoading({ title: '更新中...' })
 					
-					const result = await feishuRequest.updateRecord('任务表', this.task.id, {
+					// 使用 record_id 更新飞书记录
+					const result = await feishuRequest.updateRecord('任务表', this.task.record_id, {
 						status: '进行中'
 					})
 					
@@ -455,9 +479,10 @@
 					
 					this.stopTimer()
 					
-					const result = await feishuRequest.updateRecord('任务表', this.task.id, {
+					// 使用 record_id 更新飞书记录
+					const result = await feishuRequest.updateRecord('任务表', this.task.record_id, {
 						status: '暂停',
-						elapsed_time: this.task.elapsed_time || 0  // 保存累计时间
+						elapsed_time: Number(this.task.elapsed_time) || 0  // 保存累计时间
 					})
 					
 					if (result.success) {
@@ -483,7 +508,8 @@
 				try {
 					uni.showLoading({ title: '更新中...' })
 					
-					const result = await feishuRequest.updateRecord('任务表', this.task.id, {
+					// 使用 record_id 更新飞书记录
+					const result = await feishuRequest.updateRecord('任务表', this.task.record_id, {
 						status: '进行中'
 					})
 					
@@ -531,42 +557,116 @@
 					// 判断是否需要审核
 					const needApproval = this.task.need_audit
 					
-					// 准备提交数据
-					const updateData = {
+					// 1. 只更新任务状态（使用 record_id 更新）
+					const taskUpdateData = {
 						status: needApproval ? '待审核' : '已完成',
-						elapsed_time: this.task.elapsed_time || 0
+						elapsed_time: Number(this.task.elapsed_time) || 0
 					}
 					
-					// 如果有备注，添加备注
-					if (this.remark.trim()) {
-						updateData.remark = this.remark.trim()
+					const taskResult = await feishuRequest.updateRecord('任务表', this.task.record_id, taskUpdateData)
+					console.log('创建打卡记录----',this.task,taskResult,needApproval);
+					
+					if (!taskResult.success) {
+						uni.showToast({ title: '提交失败', icon: 'none' })
+						return
 					}
-					
-					// 如果有上传的文件，这里可以添加文件上传逻辑
-					if (this.uploadedFiles.length > 0) {
-						console.log('[Task Detail] 需要上传的文件:', this.uploadedFiles)
-						// 实际项目中这里会调用文件上传API
-					}
-					
-					const result = await feishuRequest.updateRecord('任务表', this.task.id, updateData)
-					
-					if (result.success) {
-						this.task.status = updateData.status
-						this.task.completed = true
-						
-						if (!needApproval) {
-							// 不需要审核，直接获得积分
-							this.aiEvaluation = this.getMockAiEvaluation()
-							uni.showToast({ title: `+${this.task.base_points} 积分`, icon: 'success' })
-						} else {
-							// 需要审核，等待审核结果
-							uni.showToast({ title: '提交成功，等待审核', icon: 'success' })
+					debugger
+					// 2. 创建打卡记录（包含图片和备注）
+					if (needApproval) {
+						// 通过 ImageUploader 组件上传图片
+						let uploadSuccessCount = 0
+						let imageFieldData = null
+						if (this.uploadedFiles.length > 0 && this.$refs.imageUploaderRef) {
+							try {
+								const uploadResult = await this.$refs.imageUploaderRef.uploadAndGetFieldValue()
+								if (uploadResult && uploadResult.value) {
+									uploadSuccessCount = uploadResult.successCount
+									imageFieldData = this.$refs.imageUploaderRef.convertToImageFieldValue(uploadResult.value)
+								}
+								console.log('[Task Detail] 图片上传完成，成功:', uploadSuccessCount, '/', this.uploadedFiles.length)
+							} catch (uploadError) {
+								console.error('[Task Detail] 图片上传异常:', uploadError)
+								uni.showToast({ title: '图片上传部分失败，继续提交', icon: 'none', duration: 2000 })
+							}
 						}
 						
-						this.showSubmitModal = false
-					} else {
-						uni.showToast({ title: '提交失败', icon: 'none' })
+						// 处理 child_id，确保是字符串格式
+						let childIdValue = this.task.child_id || ''
+						if (typeof childIdValue === 'object') {
+							// 如果是对象格式（如 { text: 'xxx', type: 'text' }），提取 text 值
+							childIdValue = childIdValue.text || ''
+						}
+						
+						// 确保 task_id 有值，优先使用 id 字段（用户自定义的任务ID）
+						// 如果 id 为空，使用 record_id 作为兜底（避免无法创建打卡记录）
+						let taskIdValue = this.task.id || this.task.task_id || this.task.record_id || ''
+						console.log('[Task Detail] 提交打卡记录，task.id:', this.task.id, 'task.record_id:', this.task.record_id, 'task.child_id:', childIdValue)
+						
+						// 校验 task_id 是否有值
+						if (!taskIdValue) {
+							console.error('[Task Detail] 任务ID为空，无法创建打卡记录')
+							uni.showToast({ title: '任务ID缺失', icon: 'none' })
+							uni.hideLoading()
+							return
+						}
+						
+						// 准备打卡记录数据 - remark 和 evidence_images 都加到打卡记录中
+						const checkinData = {
+							task_id: String(taskIdValue), // 使用用户自定义的任务ID（fields.id），不要使用 record_id
+							child_id: String(childIdValue), // 确保是字符串格式
+							remark: this.remark.trim() || '',
+							created_time: Date.now(), // Unix时间戳（毫秒），飞书多维表格日期字段要求
+							content: '完成' + (this.task.title || ''),
+							review_status: '待审核',
+							base_points: this.task.base_points || 0,
+							reward_points: this.task.reward_points || 0
+						}
+						
+						// 如果有成功上传的图片，添加到打卡记录的 attachments 字段
+						if (imageFieldData) {
+							checkinData.attachments = imageFieldData
+						}
+						console.log('[Task Detail] 创建打卡记录----', checkinData);
+
+						// 创建打卡记录
+						const checkinResult = await feishuRequest.addRecord('打卡记录表', checkinData)
+						
+						if (!checkinResult.success) {
+							console.error('[Task Detail] 创建打卡记录失败:', checkinResult.error)
+							uni.showToast({ title: '任务已提交，但记录创建失败', icon: 'none' })
+							this.showSubmitModal = false
+							return
+						}
+						
+						// 提示图片上传结果
+						if (this.uploadedFiles.length > 0) {
+							if (uploadSuccessCount === this.uploadedFiles.length) {
+								console.log('[Task Detail] 全部图片上传成功')
+							} else {
+								console.warn('[Task Detail] 部分图片上传失败，成功:', uploadSuccessCount, '/', this.uploadedFiles.length)
+							}
+						}
 					}
+					
+					// 更新本地状态
+					this.task.status = needApproval ? '待审核' : '已完成'
+					this.task.completed = true
+					
+					if (!needApproval) {
+						// 不需要审核，直接获得积分
+						this.aiEvaluation = this.getMockAiEvaluation()
+						uni.showToast({ title: `+${this.task.base_points} 积分`, icon: 'success' })
+					} else {
+						// 需要审核，等待审核结果
+						uni.showToast({ title: '提交成功，等待审核', icon: 'success' })
+					}
+					
+					this.showSubmitModal = false
+					
+					// 延迟返回首页，让用户看到成功提示
+					setTimeout(() => {
+						uni.navigateBack()
+					}, 1500)
 				} catch (error) {
 					console.error('[Task Detail] 提交任务失败:', error)
 					uni.showToast({ title: '提交失败', icon: 'none' })
@@ -575,23 +675,25 @@
 				uni.hideLoading()
 			},
 			
+			// uploadImagesAndGetFieldValue 和 convertToImageFieldValue 已由 ImageUploader 组件提供
+			
 			/**
 			 * 启动计时器
+			 * 基于固定的计时起始时间计算经过时间，避免 delta 累加带来的漂移
 			 */
 			startTimer() {
 				if (this.timer) {
 					clearInterval(this.timer)
 				}
 				
-				// 使用局部变量记录上次计时时间，避免修改task.start_time
-				let lastTime = Date.now()
+				// 记录计时器启动时的基准时间和基准 elapsed_time
+				const timerStartTime = Date.now()
+				const baseElapsedTime = this.task ? (this.task.elapsed_time || 0) : 0
 				
 				this.timer = setInterval(() => {
 					if (this.task) {
-						const now = Date.now()
-						const delta = Math.floor((now - lastTime) / 1000) // 转换为秒
-						this.task.elapsed_time = (this.task.elapsed_time || 0) + delta
-						lastTime = now
+						const elapsed = baseElapsedTime + Math.floor((Date.now() - timerStartTime) / 1000)
+						this.task.elapsed_time = elapsed
 					}
 				}, 1000)
 			},
@@ -610,10 +712,10 @@
 			 * 保存累计时间到后端
 			 */
 			async saveElapsedTime() {
-				if (this.task && this.task.id && this.task.elapsed_time) {
+				if (this.task && this.task.record_id && this.task.elapsed_time) {
 					try {
-						await feishuRequest.updateRecord('任务表', this.task.id, {
-							elapsed_time: this.task.elapsed_time
+						await feishuRequest.updateRecord('任务表', this.task.record_id, {
+							elapsed_time: Number(this.task.elapsed_time)
 						})
 						console.log('[Task Detail] 保存累计时间成功:', this.task.elapsed_time)
 					} catch (error) {
