@@ -85,12 +85,48 @@
 					count: this.maxCount - this.localFiles.length,
 					sizeType: ['compressed'],
 					sourceType: ['album', 'camera'],
-					success: (res) => {
+					success: async(res) => {
 						console.log('[ImageUploader] 选择图片成功:', res.tempFiles)
-						const newFiles = res.tempFiles.map(file => ({
-							path: file.path,
-							size: file.size
-						}))
+						// 如果没有传入 objToken，先通过 wiki 接口获取
+						let objToken = null
+						if (!objToken) {
+							console.log('[ImageUploader] 正在获取 objToken...')
+							try {
+								const nodeResult = await feishuRequest.getNodeByToken()
+								if (nodeResult.success && nodeResult.objToken) {
+									objToken = nodeResult.objToken
+									console.log('[ImageUploader] 获取 objToken 成功:', objToken)
+								} else {
+									console.error('[ImageUploader] 获取 objToken 失败:', nodeResult.message || '未知错误')
+									return null
+								}
+							} catch (error) {
+								console.error('[ImageUploader] 获取 objToken 异常:', error.message)
+								return null
+							}
+						}
+						debugger
+						const fileTokens = []
+						let successCount = 0
+						const newFiles = res.tempFiles.map(async(file) => {
+							try {
+								const result = await feishuRequest.uploadFile(file.path, objToken)
+								if (result.success && result.fileToken) {
+									fileTokens.push({ file_token: result.fileToken })
+									successCount++
+									console.log('[ImageUploader] 图片上传成功，fileToken:', result.fileToken)
+								} else {
+									console.error('[ImageUploader] 图片上传失败:', result.message || '未知错误')
+								}
+							} catch (error) {
+								console.error('[ImageUploader] 图片上传异常:', error.message)
+							}
+							return ({
+								path: file.path,
+								size: file.size
+								
+							})
+						})
 						// 更新本地列表并触发 v-model 更新
 						this.localFiles = [...this.localFiles, ...newFiles]
 						console.log('[ImageUploader] localFiles 更新后:', this.localFiles)

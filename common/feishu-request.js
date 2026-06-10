@@ -450,7 +450,7 @@ class FeishuRequest {
 	 */
 	async uploadFile(filePath, objToken = null) {
 		console.log('[FeishuRequest] 上传文件:', filePath, 'objToken:', objToken ? objToken.substring(0, 10) + '...' : 'null(使用baseToken)')
-		
+		debugger
 		if (USE_MOCK) {
 			return {
 				success: true,
@@ -463,8 +463,8 @@ class FeishuRequest {
 			
 			// 提取文件名（处理各种路径格式）
 			const fileName = filePath.split('/').pop().split('\\').pop()
-			console.log('[FeishuRequest] 文件名:', fileName)
-			
+			console.log('[FeishuRequest] 文件名:', fileName,uni.getFileSystemManager)
+			debugger
 			let fileContentBase64 = null
 			
 			if (typeof uni.getFileSystemManager === 'function') {

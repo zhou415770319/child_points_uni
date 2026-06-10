@@ -1,5 +1,8 @@
 // 飞书工具云对象
-
+'use strict';
+const fs = require('fs')
+const path = require('path')
+const FormData = require('form-data'); 
 // Token缓存
 let cachedToken = null
 let tokenExpiresAt = 0
@@ -867,31 +870,57 @@ async function uploadFile(params) {
 		// 	contentType = 'image/webp'
 		// }
 		
-		console.log('[FeishuTools] 上传文件名:', uploadFileName)
-		console.log('[FeishuTools] parent_node:', parentNode || baseToken, '(parentNode:', parentNode, ', baseToken:', baseToken, ')')
-		console.log('[FeishuTools] size:', fileSize)
-		console.log('[FeishuTools] 文件内容长度:', fileContent.length)
-		console.log('[FeishuTools] AccessToken长度:', tokenResult.accessToken ? tokenResult.accessToken.length : 0)
-		console.log('[FeishuTools] fileContentBase64:', fileContentBase64)
-		// let form = {
-		// 		file_name: uploadFileName,
-		// 使用 uniCloud.httpclient 的 formData 选项，自动处理 multipart 格式
-		// 根据飞书API文档，所有参数都放在formData中
-		const response = await uniCloud.httpclient.request(url, {
+		console.log('[FeishuTools] 上传文件名:', {
 			method: 'POST',
 			headers: {
 				'Authorization': 'Bearer ' + tokenResult.accessToken,
 				'Content-Type': 'multipart/form-data; boundary=---7MA4YWxkTrZu0gW'
 			},
-			formData: {
-				file_name: uploadFileName,
+			data: {
+				file_name: 'abc.png',
 				parent_type: 'bitable_image',
 				parent_node: parentNode || baseToken,
 				size: fileSize.toString(),
-				file: fileContentBase64  // 直接传递二进制Buffer
+				file: fileContent  // 直接传递二进制Buffer
+			},
+			dataType: 'json'
+		}, url)
+		const form = new FormData();
+		form.append('file', fileContent, { filename: uploadFileName });
+		form.append('file_name', uploadFileName);
+		form.append('parent_type', 'bitable_image');
+		form.append('parent_node', parentNode || baseToken);
+		form.append('size', fileSize.toString());
+		
+		const response = await uniCloud.httpclient.request(url, {
+			method: 'POST',
+			content: form.getBuffer(),
+			headers: {
+				...form.getHeaders(),
+				'Authorization': 'Bearer ' + tokenResult.accessToken
 			},
 			dataType: 'json'
 		})
+		// let form = {
+		// 		file_name: uploadFileName,
+		// 使用 uniCloud.httpclient 的 formData 选项，自动处理 multipart 格式
+		// 根据飞书API文档，所有参数都放在formData中
+		// const response = await uniCloud.httpclient.request(url, {
+		// 	method: 'POST',
+		// 	headers: {
+		// 		'Authorization': 'Bearer ' + tokenResult.accessToken,
+		// 		'Content-Type': 'multipart/form-data; boundary=---7MA4YWxkTrZu0gW'
+		// 	},
+		// 	data: {
+		// 		file_name: 'abc.png',
+		// 		parent_type: 'bitable_image',
+		// 		parent_node: parentNode || baseToken,
+		// 		size: fileSize.toString(),
+		// 		file: fileContent  // 直接传递二进制Buffer
+		// 	},
+		// 	files:[fileContent],
+		// 	dataType: 'json'
+		// })
 		
 		console.log('[FeishuTools] 上传响应状态码:', response.status)
 		console.log('[FeishuTools] 上传响应头:', JSON.stringify(response.headers))
