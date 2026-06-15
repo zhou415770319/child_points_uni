@@ -2,9 +2,15 @@
 	<view class="container">
 		<view class="header">
 			<text class="header-title">🎁 礼品商城</text>
-			<view class="balance">
-				<text class="balance-label">我的积分</text>
-				<text class="balance-value">{{ balance }}</text>
+			<view class="balance-container">
+				<view class="balance">
+					<text class="balance-label">我的积分</text>
+					<text class="balance-value">{{ balance }}</text>
+				</view>
+				<view class="balance">
+					<text class="balance-label">我的金币</text>
+					<text class="balance-value coins">{{ coins }}</text>
+				</view>
 			</view>
 		</view>
 
@@ -25,12 +31,14 @@
 					<text v-else class="gift-icon">🎁</text>
 				</view>
 				<text class="gift-name">{{ gift.name }}</text>
-				<text class="gift-points">⭐ 需要 {{ gift.points }} 积分</text>
-				<text class="gift-price">🎁 奖励 {{ gift.price }} 积分</text>
+				<view class="gift-cost">
+					<text class="cost-item">⭐ {{ gift.base_points }} 积分</text>
+					<text class="cost-item"><image class="coin-icon" src="/static/svg/jinbi.svg" mode="aspectFit" /> {{ gift.reward_points }} 金币</text>
+				</view>
 				<text class="gift-stock" :class="gift.stock > 0 ? 'available' : 'unavailable'">
 					{{ gift.stock > 0 ? '有货' : '缺货' }}
 				</text>
-				<button class="exchange-btn" :class="{ disabled: gift.stock <= 0 || balance < gift.points }" @click.stop="exchangeGift(gift)">
+				<button class="exchange-btn" :class="{ disabled: gift.stock <= 0 || balance < gift.base_points || coins < gift.reward_points }" @click.stop="exchangeGift(gift)">
 					兑换
 				</button>
 			</view>
@@ -51,11 +59,13 @@
 					<view class="detail-info">
 						<view class="info-row">
 							<text class="info-label">需要积分</text>
-							<text class="info-value price">⭐ {{ selectedGift?.points }}</text>
+							<text class="info-value price">⭐ {{ selectedGift?.base_points }}</text>
 						</view>
 						<view class="info-row">
-							<text class="info-label">奖励积分</text>
-							<text class="info-value reward">🎁 {{ selectedGift?.price }}</text>
+							<text class="info-label">需要金币</text>
+							<view class="info-value coins">
+								<image class="coin-icon" src="/static/svg/jinbi.svg" mode="aspectFit" /> {{ selectedGift?.reward_points }}
+							</view>
 						</view>
 						<view class="info-row">
 							<text class="info-label">剩余库存</text>
@@ -67,7 +77,7 @@
 				</view>
 				<view class="modal-footer">
 					<button class="btn btn-secondary" @click="closeDetailModal">取消</button>
-					<button class="btn btn-primary" :class="{ disabled: selectedGift?.stock <= 0 || balance < selectedGift?.points }" @click="confirmExchange">
+					<button class="btn btn-primary" :class="{ disabled: selectedGift?.stock <= 0 || balance < selectedGift?.base_points || coins < selectedGift?.reward_points }" @click="confirmExchange">
 						确认兑换
 					</button>
 				</view>
@@ -86,6 +96,7 @@
 		data() {
 			return {
 				balance: 0,
+				coins: 0,
 				selectedCategory: 'all',
 				categories: [
 					{ id: 'all', name: '全部', icon: '🎯' },
@@ -149,8 +160,8 @@
 							id: item.record_id,
 							name: item.fields.name ? (Array.isArray(item.fields.name) && item.fields.name[0]?.text ? item.fields.name[0].text : item.fields.name) : '',
 							description: item.fields.description ? (Array.isArray(item.fields.description) && item.fields.description[0]?.text ? item.fields.description[0].text : item.fields.description) : '',
-							points: item.fields.points || 0,    // 基础积分（需要的积分）
-							price: item.fields.price || 0,       // 奖励积分（兑换后获得的积分）
+							base_points: item.fields.base_points || 0,    // 基础积分（需要的积分）
+							reward_points: item.fields.reward_points || 0, // 奖励积分/金币（需要的金币）
 							stock: item.fields.stock || 0,
 							category: item.fields.category || 'other',
 							status: item.fields.status || '下架',
@@ -201,13 +212,14 @@
 				}
 			},
 			/**
-			 * 加载当前儿童的积分余额
+			 * 加载当前儿童的积分和金币余额
 			 */
 			async loadBalance() {
 				try {
 					const child = await UserManager.getCurrentChild()
 					if (child) {
 						this.balance = child.total_points || 0
+						this.coins = child.total_reward_points || 0
 					}
 				} catch (error) {
 					console.error('[Child Mall] 加载积分失败:', error)
@@ -226,21 +238,25 @@
 					uni.showToast({ title: '该商品已缺货', icon: 'none' })
 					return
 				}
-				if (this.balance < gift.points) {
+				if (this.balance < gift.base_points) {
 					uni.showToast({ title: '积分不足', icon: 'none' })
+					return
+				}
+				if (this.coins < gift.reward_points) {
+					uni.showToast({ title: '金币不足', icon: 'none' })
 					return
 				}
 				this.showGiftDetail(gift)
 			},
 			async confirmExchange() {
 				if (!this.selectedGift) return
-				if (this.selectedGift.stock <= 0 || this.balance < this.selectedGift.points) {
+				if (this.selectedGift.stock <= 0 || this.balance < this.selectedGift.base_points || this.coins < this.selectedGift.reward_points) {
 					return
 				}
 
 				uni.showModal({
 					title: '确认兑换',
-					content: `确定用 ${this.selectedGift.points} 积分兑换 "${this.selectedGift.name}" 吗？`,
+					content: `确定用 ${this.selectedGift.base_points} 积分和 ${this.selectedGift.reward_points} 金币兑换 "${this.selectedGift.name}" 吗？`,
 					success: async (res) => {
 						if (res.confirm) {
 							try {
@@ -253,15 +269,18 @@
 										stock: this.selectedGift.stock - 1
 									})
 									
-									// 更新儿童积分：扣除需要的积分，加上奖励积分
-									const newBalance = this.balance - this.selectedGift.points + this.selectedGift.price
+									// 更新儿童积分和金币：扣除需要的积分和金币
+									const newBalance = this.balance - this.selectedGift.base_points
+									const newCoins = this.coins - this.selectedGift.reward_points
 									await feishuRequest.updateRecord('儿童表', child.id, {
-										total_points: newBalance
+										total_points: newBalance,
+										total_reward_points: newCoins
 									})
 								}
 								
-								// 更新本地余额：扣除需要的积分，加上奖励积分
-								this.balance = this.balance - this.selectedGift.points + this.selectedGift.price
+								// 更新本地余额：扣除需要的积分和金币
+								this.balance = this.balance - this.selectedGift.base_points
+								this.coins = this.coins - this.selectedGift.reward_points
 								this.selectedGift.stock -= 1
 								this.closeDetailModal()
 								uni.showToast({ title: '🎉 兑换成功！', icon: 'success' })
@@ -309,11 +328,17 @@
 		color: #fff;
 	}
 
+	.balance-container {
+		display: flex;
+		gap: 15rpx;
+	}
+
 	.balance {
 		background-color: rgba(255, 255, 255, 0.2);
 		border-radius: 20rpx;
 		padding: 15rpx 25rpx;
 		text-align: center;
+		min-width: 140rpx;
 	}
 
 	.balance-label {
@@ -326,6 +351,10 @@
 		font-size: 36rpx;
 		font-weight: bold;
 		color: #ffd700;
+
+		&.coins {
+			color: #ffcc00;
+		}
 	}
 
 	.category-tabs {
@@ -402,18 +431,16 @@
 		margin-bottom: 10rpx;
 	}
 
-	.gift-price {
-		font-size: 24rpx;
-		color: #ff9500;
-		display: block;
+	.gift-cost {
+		display: flex;
+		justify-content: center;
+		gap: 15rpx;
 		margin-bottom: 8rpx;
 	}
 
-	.gift-points {
+	.cost-item {
 		font-size: 24rpx;
 		color: #666;
-		display: block;
-		margin-bottom: 8rpx;
 	}
 
 	.gift-stock {
@@ -548,8 +575,8 @@
 			color: #ff9500;
 		}
 
-		&.reward {
-			color: #4caf50;
+		&.coins {
+			color: #ffcc00;
 		}
 	}
 
@@ -588,5 +615,12 @@
 			background-color: #f0f0f0;
 			color: #999;
 		}
+	}
+
+	.coin-icon {
+		width: 28rpx;
+		height: 28rpx;
+		vertical-align: middle;
+		margin-right: 4rpx;
 	}
 </style>

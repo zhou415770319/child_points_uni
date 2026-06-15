@@ -157,6 +157,14 @@ class UserManager {
    */
   static async getChildrenByParent(parentPhone) {
     try {
+      // 先从缓存中获取
+      const cacheKey = `children_${parentPhone}`
+      const cachedData = uni.getStorageSync(cacheKey)
+      if (cachedData) {
+        console.log('[UserManager] 从缓存获取儿童列表:', cachedData)
+        return JSON.parse(cachedData)
+      }
+      
       const result = await feishuRequest.queryRecords('儿童表', { parent_account: parentPhone })
       if (result.success && result.data && result.data.length > 0) {
         console.log('儿童表----result.data',result.data);
@@ -181,7 +189,7 @@ class UserManager {
           }
         }
         
-        return result.data.map(item => {
+        const childrenList = result.data.map(item => {
           let avatarUrl = ''
           if (item.fields.avatar && item.fields.avatar.length > 0) {
             const fileToken = item.fields.avatar[0].file_token
@@ -207,9 +215,16 @@ class UserManager {
             grade: item.fields.grade || '',
             hobby: item.fields.hobby ? (typeof item.fields.hobby === 'string' ? item.fields.hobby.split('、') : item.fields.hobby) : [],
             total_points: item.fields.total_points || 0,
+            total_reward_points: item.fields.total_reward_points || 0,
             parent_account: item.fields.parent_account || ''
           }
         })
+        
+        // 将数据缓存起来
+        uni.setStorageSync(cacheKey, JSON.stringify(childrenList))
+        console.log('[UserManager] 儿童列表已缓存')
+        
+        return childrenList
       }
       return []
     } catch (error) {
@@ -241,6 +256,20 @@ class UserManager {
     uni.removeStorageSync('currentUser')
     uni.removeStorageSync('currentChild')
     uni.removeStorageSync('userRole')
+    uni.removeStorageSync('childrenList')
+    
+    // 清除所有以 children_ 开头的缓存（家长绑定的儿童列表）
+    try {
+      const keys = uni.getStorageInfoSync().keys || []
+      keys.forEach(key => {
+        if (key.startsWith('children_')) {
+          uni.removeStorageSync(key)
+        }
+      })
+    } catch (e) {
+      console.warn('[UserManager] 清除 children_ 缓存失败:', e)
+    }
+    
     console.log('[UserManager] 用户缓存已清除')
   }
 

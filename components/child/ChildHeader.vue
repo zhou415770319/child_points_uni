@@ -13,11 +13,16 @@
 			</view>
 			<text class="switch-icon" @click="showChildSwitch">↕️</text>
 		</view>
-		<view class="points-badge" @click="goToPointsHistory">
+		<view class="points-section">
+			<view class="points-badge" @click="goToPointsHistory">
 				<text class="points-value">{{ totalPoints || 0 }}</text>
 				<text class="points-label">积分</text>
-				<text class="points-arrow">›</text>
 			</view>
+			<view class="coins-badge">
+				<text class="coins-value">{{ formatCoins(totalCoins) }}</text>
+				<text class="coins-label">金币</text>
+			</view>
+		</view>
 	</view>
 </template>
 
@@ -36,9 +41,16 @@
 			totalPoints: {
 				type: Number,
 				default: 0
+			},
+			totalCoins: {
+				type: Number,
+				default: 0
 			}
 		},
 		methods: {
+			formatCoins(value) {
+				return Number(value || 0).toFixed(1)
+			},
 			goToProfile() {
 				this.$emit('goToProfile')
 			},
@@ -116,28 +128,49 @@
 		color: rgba(255, 255, 255, 0.8);
 	}
 
-	.points-badge {
-		background-color: rgba(255, 255, 255, 0.2);
-		padding: 15rpx 25rpx;
-		border-radius: 30rpx;
+	.points-section {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
 		gap: 10rpx;
 	}
 
+	.points-badge {
+		background-color: rgba(255, 255, 255, 0.2);
+		padding: 10rpx 20rpx;
+		border-radius: 20rpx;
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
 	.points-value {
-		font-size: 32rpx;
+		font-size: 26rpx;
 		font-weight: bold;
 		color: #fff;
 	}
 
 	.points-label {
-		font-size: 20rpx;
+		font-size: 18rpx;
 		color: rgba(255, 255, 255, 0.8);
 	}
 
-	.points-arrow {
-		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.8);
+	.coins-badge {
+		background-color: rgba(255, 215, 0, 0.3);
+		padding: 10rpx 20rpx;
+		border-radius: 20rpx;
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.coins-value {
+		font-size: 26rpx;
+		font-weight: bold;
+		color: #ffd700;
+	}
+
+	.coins-label {
+		font-size: 18rpx;
+		color: rgba(255, 215, 0, 0.8);
 	}
 </style>

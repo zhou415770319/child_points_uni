@@ -818,6 +818,21 @@
 				if (textbook) return textbook.name
 				return ''
 			},
+			// 解析飞书多维表格的字段值（可能是 {value: [{text: 'xxx'}] } 或直接是字符串）
+			parseFeishuField(value) {
+				if (!value) return ''
+				// 如果是字符串，直接返回
+				if (typeof value === 'string') return value
+				// 如果是数组且第一个元素有 text 属性
+				if (Array.isArray(value) && value[0] && value[0].text) return value[0].text
+				// 如果是对象且有 value 属性（{value: [{text: 'xxx'}]}）
+				if (typeof value === 'object' && value.value) {
+					if (Array.isArray(value.value) && value.value[0] && value.value[0].text) {
+						return value.value[0].text
+					}
+				}
+				return ''
+			},
 			setFilter(filter) {
 				this.currentFilter = filter
 			},
@@ -872,13 +887,22 @@
 								// 解析教材名称
 								const textbookName = this.parseTextbookName(item.fields.textbook_id)
 								
+								// 解析任务类型（可能是飞书嵌套格式）
+								const taskType = this.parseFeishuField(item.fields.type) || ''
+								
+								// 解析难度等级（可能是飞书嵌套格式）
+								const difficulty = this.parseFeishuField(item.fields.difficulty) || '简单'
+								
+								// 解析开始时间
+								const startTime = item.fields.start_time || null
+								
 								return {
 									id: item.record_id,
 									title: title,
 									description: description,
-									type: item.fields.type || '',
+									type: taskType,
 									type_text: item.fields.type_text || '',
-									difficulty: item.fields.difficulty || '简单',
+									difficulty: difficulty,
 									base_points: item.fields.base_points || 0,
 									reward_points: reward_points,
 									need_audit: need_audit,
@@ -888,6 +912,7 @@
 									textbook_id: item.fields.textbook_id || '',
 									textbook_name: textbookName,
 									status: item.fields.status || '未开始',
+									start_time: startTime,
 									updated_at: item.fields.updated_at || item.created_at || Date.now()
 								}
 						})

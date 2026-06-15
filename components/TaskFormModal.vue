@@ -296,11 +296,11 @@
 					this.formData = {
 						title: this.editingTask.title || '',
 						description: this.editingTask.description || '',
-						type: this.editingTask.type || '',
-						difficulty: this.editingTask.difficulty || '',
+						type: this.parseFeishuField(this.editingTask.type) || '',
+						difficulty: this.parseFeishuField(this.editingTask.difficulty) || '',
 						base_points: this.editingTask.base_points ? this.editingTask.base_points.toString() : '',
 						reward_points: this.editingTask.reward_points ? this.editingTask.reward_points.toString() : '',
-						start_time: this.editingTask.start_time ? Number(this.editingTask.start_time) : '',
+						start_time: this.editingTask.start_time ? Number(this.editingTask.start_time) : new Date().setHours(0, 0, 0, 0),
 						deadline_time: this.editingTask.deadline_time ? Number(this.editingTask.deadline_time) : '',
 						batch_create: this.editingTask.batch_create || false,
 						period: this.editingTask.period || '',
@@ -316,6 +316,13 @@
 					// 设置选中状态
 					this.selectedChild = this.formData.child_id || ''
 					this.selectedTextbook = this.formData.textbook_id || ''
+					
+					console.log('[TaskFormModal] 编辑任务回显数据:', {
+						type: this.formData.type,
+						difficulty: this.formData.difficulty,
+						start_time: this.formData.start_time,
+						selectedChild: this.selectedChild
+					})
 				}
 			},
 			resetForm() {

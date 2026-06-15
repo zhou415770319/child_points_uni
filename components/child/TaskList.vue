@@ -13,7 +13,10 @@
 					<text class="task-icon">{{ getTaskIcon(task.type) }}</text>
 					<view class="task-info">
 						<text class="task-title">{{ task.title }}</text>
-						<text class="task-points">+{{ task.base_points }} 积分</text>
+						<view class="task-rewards">
+							<text class="task-points">+{{ task.base_points || 0 }} 积分</text>
+							<text class="task-coins">+{{ formatCoins(task.reward_points) }} 金币</text>
+						</view>
 					</view>
 				</view>
 				<view class="task-actions">
@@ -112,6 +115,9 @@
 		methods: {
 			getTaskIcon(type) {
 				return TASK_ICONS[type] || TASK_ICONS['其他']
+			},
+			formatCoins(value) {
+				return Number(value || 0).toFixed(1)
 			},
 			formatTime(seconds) {
 				const h = Math.floor(seconds / 3600)
@@ -227,12 +233,22 @@
 		font-size: 28rpx;
 		color: #333;
 		font-weight: 500;
-		margin-bottom: 5rpx;
+		margin-bottom: 8rpx;
+	}
+
+	.task-rewards {
+		display: flex;
+		gap: 15rpx;
 	}
 
 	.task-points {
 		font-size: 22rpx;
 		color: #ff6b6b;
+	}
+
+	.task-coins {
+		font-size: 22rpx;
+		color: #ffd700;
 	}
 
 	.task-actions {

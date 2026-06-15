@@ -28,7 +28,11 @@
 				</view>
 				<view class="info-item">
 					<text class="info-label">积分</text>
-					<text class="info-value points">+{{ task.base_points }}</text>
+					<text class="info-value points">+{{ task.base_points || 0 }}</text>
+				</view>
+				<view class="info-item">
+					<text class="info-label">金币</text>
+					<text class="info-value coins">+{{ formatCoins(task.reward_points) }}</text>
 				</view>
 				<view class="info-item">
 					<text class="info-label">状态</text>
@@ -84,33 +88,49 @@
 
 		<view class="section">
 			<text class="section-title">🏆 完成奖励</text>
-			<view class="reward-card">
-				<view class="reward-icon">⭐</view>
-				<view class="reward-info">
-					<text class="reward-title">任务积分</text>
-					<text class="reward-value">+{{ task?.base_points || 0 }} 积分</text>
+			<view class="reward-list">
+				<view class="reward-card points">
+					<view class="reward-icon">⭐</view>
+					<view class="reward-info">
+						<text class="reward-title">任务积分</text>
+						<text class="reward-value">+{{ task?.base_points || 0 }} 积分</text>
+					</view>
+				</view>
+				<view class="reward-card coins">
+					<view class="reward-icon">💰</view>
+					<view class="reward-info">
+						<text class="reward-title">奖励金币</text>
+						<text class="reward-value">+{{ formatCoins(task?.reward_points) }} 金币</text>
+					</view>
 				</view>
 			</view>
 		</view>
 
 		<!-- AI 评价展示（任务完成后显示） -->
-		<view class="section" v-if="task?.completed && aiEvaluation">
+		<view class="section" v-if="aiEvaluation">
 			<text class="section-title">🤖 AI 评价</text>
 			<view class="ai-card">
 				<view class="ai-score">
-					<text class="score-value">{{ aiEvaluation.score }}</text>
-					<text class="score-label">评分</text>
+					<text class="score-label">AI评分</text>
+					<text class="score-value" :class="getScoreClass(aiEvaluation.ai_score)">{{ aiEvaluation.ai_score }}分</text>
 				</view>
-				<view class="ai-stars">
-					<text v-for="i in 5" :key="i" class="star">{{ i <= Math.floor(aiEvaluation.score / 2) ? '★' : '☆' }}</text>
-				</view>
-				<view class="ai-comment">
-					<text class="comment-label">评价内容：</text>
-					<text class="comment-text">{{ aiEvaluation.comment }}</text>
-				</view>
-				<view class="ai-suggestion">
-					<text class="suggestion-label">改进建议：</text>
-					<text class="suggestion-text">{{ aiEvaluation.suggestion }}</text>
+				<text class="ai-comment">{{ aiEvaluation.ai_comment }}</text>
+				<view class="ai-detailed-container" v-if="aiEvaluation.ai_detailed && parseAiDetailed(aiEvaluation.ai_detailed)">
+					<view class="ai-detailed-header" @click="toggleAiDetailed">
+						<text class="detailed-label">评价详情</text>
+						<text class="toggle-icon" :class="{ expanded: detailedExpanded }">▼</text>
+					</view>
+					<view class="ai-detailed-content" v-if="detailedExpanded">
+						<view class="detailed-item" v-for="(item, key) in parseAiDetailed(aiEvaluation.ai_detailed)" :key="key">
+							<view class="item-header">
+								<text class="item-question">{{ key }}</text>
+								<text class="item-status" :class="item.correctness === '正确' ? 'correct' : 'wrong'">
+									{{ item.correctness === '正确' ? '✓ 正确' : '✗ 错误' }}
+								</text>
+							</view>
+							<text class="item-feedback">{{ item.feedback }}</text>
+						</view>
+					</view>
 				</view>
 			</view>
 		</view>
@@ -126,9 +146,11 @@
 					<!-- 需要审核的任务显示上传区域 -->
 					<view class="upload-section" v-if="task?.need_audit">
 						<ImageUploader 
-							v-model="uploadedFiles" 
-							:maxCount="9" 
+							:value="uploadedFiles" 
+							:maxCount="9"
+							title="📷 上传证明图片"
 							ref="imageUploaderRef"
+							@input="handleUploadedFilesChange"
 						/>
 					</view>
 
@@ -174,7 +196,8 @@
 				showSubmitModal: false,  // 提交任务弹窗
 				uploadedFiles: [],  // 上传的文件列表（与 ImageUploader 组件 v-model 绑定）
 				remark: '',  // 备注信息
-				aiEvaluation: null  // AI评价结果
+				aiEvaluation: null,  // AI评价结果
+				detailedExpanded: false  // 评价详情展开状态
 			}
 		},
 		async onLoad(options) {
@@ -196,8 +219,8 @@
 					this.task.child_name = this.getChildName(this.task.child_id)
 					console.log('[Task Detail] 重新计算的儿童名称:', this.task.child_name)
 					
-					// 如果任务已完成，尝试获取AI评价
-					if (this.task.completed) {
+					// 如果任务待审核或已完成，尝试获取AI评价
+					if (this.task.status === '待审核' || this.task.status === '已完成') {
 						await this.loadAiEvaluation()
 					}
 				} catch (error) {
@@ -232,6 +255,19 @@
 			this.refreshTaskData()
 		},
 		methods: {
+			/**
+			 * 格式化金币显示（一位小数）
+			 */
+			formatCoins(value) {
+				return Number(value || 0).toFixed(1)
+			},
+			/**
+			 * 处理上传文件变化
+			 */
+			handleUploadedFilesChange(files) {
+				console.log('[Task Detail] handleUploadedFilesChange:', files)
+				this.uploadedFiles = files
+			},
 			/**
 			 * 加载儿童列表（用于根据child_id获取儿童名称）
 			 */
@@ -328,15 +364,15 @@
 							base_points: taskData.fields.base_points || 10,
 							reward_points: taskData.fields.reward_points || 0,
 							status: taskData.fields.status || '未开始',
-							completed: taskData.fields.status === '已完成',
+							completed: taskData.fields.status === '已完成' || taskData.fields.status === '待审核',
 							elapsed_time: taskData.fields.elapsed_time || 0,
 							child_id: childId,
 							child_name: this.getChildName(childId),
 							need_audit: taskData.fields.need_audit || false
 						}
 						
-						// 如果任务已完成，尝试获取AI评价
-						if (this.task.completed) {
+						// 如果任务待审核或已完成，尝试获取AI评价
+						if (this.task.status === '待审核' || this.task.status === '已完成') {
 							await this.loadAiEvaluation()
 						}
 					} else {
@@ -380,35 +416,86 @@
 			 */
 			async loadAiEvaluation() {
 				try {
-					// 模拟AI评价数据（实际项目中应调用AI接口）
-					this.aiEvaluation = this.getMockAiEvaluation()
+					if (!this.task || !this.task.task_id) {
+						console.warn('[Task Detail] 任务ID为空，无法加载AI评价')
+						return
+					}
+					
+					// 查询打卡记录表，获取AI评价数据
+					const filter = { task_id: this.task.task_id }
+					const result = await feishuRequest.queryRecords('打卡记录表', filter)
+					
+					if (result.success && result.data && result.data.length > 0) {
+						// 取最新的打卡记录
+						const checkinRecord = result.data[0]
+						
+						this.aiEvaluation = {
+							ai_score: this.parseTextField(checkinRecord.fields.ai_score),
+							ai_comment: this.parseTextField(checkinRecord.fields.ai_comment),
+							ai_detailed: this.parseTextField(checkinRecord.fields.ai_detailed)
+						}
+						
+						console.log('[Task Detail] AI评价加载成功:', this.aiEvaluation)
+					} else {
+						console.log('[Task Detail] 未找到打卡记录，AI评价为空')
+						this.aiEvaluation = null
+					}
 				} catch (error) {
 					console.error('[Task Detail] 加载AI评价失败:', error)
+					this.aiEvaluation = null
 				}
 			},
 			
 			/**
-			 * 获取模拟AI评价数据
+			 * 解析多维表格文本字段
 			 */
-			getMockAiEvaluation() {
-				const evaluations = [
-					{
-						score: 10,
-						comment: '太棒了！任务完成得非常出色，字迹工整，内容完整。继续保持！',
-						suggestion: '建议下次可以尝试用不同的方式表达，增加一些自己的想法。'
-					},
-					{
-						score: 8,
-						comment: '任务完成得不错，基本要求都达到了。',
-						suggestion: '还有一些小细节可以改进，比如书写可以更工整一些。'
-					},
-					{
-						score: 9,
-						comment: '完成得很好！思路清晰，表达流畅。',
-						suggestion: '可以尝试挑战更有难度的任务，提升自己的能力。'
+			parseTextField(field) {
+				if (!field) return ''
+				if (typeof field === 'object' && field.type === 1 && field.value && Array.isArray(field.value) && field.value.length > 0) {
+					return field.value[0].text || ''
+				}
+				if (Array.isArray(field) && field[0] && field[0].text) {
+					return field[0].text
+				}
+				if (typeof field === 'string') {
+					return field
+				}
+				return ''
+			},
+			
+			/**
+			 * 解析AI评价详情JSON
+			 */
+			parseAiDetailed(detailedStr) {
+				if (!detailedStr) return null
+				try {
+					const parsed = JSON.parse(detailedStr)
+					if (typeof parsed === 'object' && parsed !== null) {
+						return parsed
 					}
-				]
-				return evaluations[Math.floor(Math.random() * evaluations.length)]
+					return null
+				} catch (error) {
+					console.error('[Task Detail] 解析AI评价详情失败:', error)
+					return null
+				}
+			},
+			
+			/**
+			 * 切换评价详情折叠状态
+			 */
+			toggleAiDetailed() {
+				this.detailedExpanded = !this.detailedExpanded
+			},
+			
+			/**
+			 * 获取评分样式类
+			 */
+			getScoreClass(score) {
+				if (!score) return ''
+				score = parseInt(score) || 0
+				if (score >= 90) return 'high'
+				if (score >= 70) return 'medium'
+				return 'low'
 			},
 			
 			getTaskIcon(type) {
@@ -570,24 +657,19 @@
 						uni.showToast({ title: '提交失败', icon: 'none' })
 						return
 					}
-					debugger
 					// 2. 创建打卡记录（包含图片和备注）
 					if (needApproval) {
-						// 通过 ImageUploader 组件上传图片
+						// 选择图片时已经获取到 fileToken，直接从 uploadedFiles 中提取
 						let uploadSuccessCount = 0
 						let imageFieldData = null
-						if (this.uploadedFiles.length > 0 && this.$refs.imageUploaderRef) {
-							try {
-								const uploadResult = await this.$refs.imageUploaderRef.uploadAndGetFieldValue()
-								if (uploadResult && uploadResult.value) {
-									uploadSuccessCount = uploadResult.successCount
-									imageFieldData = this.$refs.imageUploaderRef.convertToImageFieldValue(uploadResult.value)
-								}
-								console.log('[Task Detail] 图片上传完成，成功:', uploadSuccessCount, '/', this.uploadedFiles.length)
-							} catch (uploadError) {
-								console.error('[Task Detail] 图片上传异常:', uploadError)
-								uni.showToast({ title: '图片上传部分失败，继续提交', icon: 'none', duration: 2000 })
-							}
+						if (this.uploadedFiles.length > 0) {
+							// 提取所有成功上传的 fileToken（飞书附件字段直接传对象数组）
+							imageFieldData = this.uploadedFiles
+								.filter(file => file.fileToken)
+								.map(file => ({ file_token: file.fileToken }))
+							
+							uploadSuccessCount = imageFieldData.length
+							console.log('[Task Detail] 图片 fileToken 提取完成，成功:', uploadSuccessCount, '/', this.uploadedFiles.length)
 						}
 						
 						// 处理 child_id，确保是字符串格式
@@ -597,14 +679,13 @@
 							childIdValue = childIdValue.text || ''
 						}
 						
-						// 确保 task_id 有值，优先使用 id 字段（用户自定义的任务ID）
-						// 如果 id 为空，使用 record_id 作为兜底（避免无法创建打卡记录）
-						let taskIdValue = this.task.id || this.task.task_id || this.task.record_id || ''
-						console.log('[Task Detail] 提交打卡记录，task.id:', this.task.id, 'task.record_id:', this.task.record_id, 'task.child_id:', childIdValue)
+						// 确保 task_id 有值，只使用用户自定义的任务ID（fields.id），不要使用 record_id
+						let taskIdValue = this.task.task_id || ''
+						console.log('[Task Detail] 提交打卡记录，task.id:', this.task.id, 'task.task_id:', this.task.task_id, 'task.record_id:', this.task.record_id, 'task.child_id:', childIdValue)
 						
 						// 校验 task_id 是否有值
 						if (!taskIdValue) {
-							console.error('[Task Detail] 任务ID为空，无法创建打卡记录')
+							console.error('[Task Detail] 任务ID（fields.id）为空，无法创建打卡记录')
 							uni.showToast({ title: '任务ID缺失', icon: 'none' })
 							uni.hideLoading()
 							return
@@ -622,8 +703,8 @@
 							reward_points: this.task.reward_points || 0
 						}
 						
-						// 如果有成功上传的图片，添加到打卡记录的 attachments 字段
-						if (imageFieldData) {
+						// 如果有成功上传的图片，添加到打卡记录的 attachments 字段（飞书附件字段直接传对象数组）
+						if (imageFieldData && imageFieldData.length > 0) {
 							checkinData.attachments = imageFieldData
 						}
 						console.log('[Task Detail] 创建打卡记录----', checkinData);
@@ -654,7 +735,6 @@
 					
 					if (!needApproval) {
 						// 不需要审核，直接获得积分
-						this.aiEvaluation = this.getMockAiEvaluation()
 						uni.showToast({ title: `+${this.task.base_points} 积分`, icon: 'success' })
 					} else {
 						// 需要审核，等待审核结果
@@ -852,10 +932,14 @@
 		}
 
 		&.points {
-			color: #ff9500;
-		}
+				color: #ff9500;
+			}
 
-		&.status {
+			&.coins {
+				color: #ffd700;
+			}
+
+			&.status {
 			&.未开始 { color: #999; }
 			&.进行中 { color: #2196f3; }
 			&.已完成 { color: #4caf50; }
@@ -956,12 +1040,33 @@
 		line-height: 1.8;
 	}
 
+	.reward-list {
+		display: flex;
+		flex-direction: column;
+		gap: 15rpx;
+	}
+
 	.reward-card {
 		display: flex;
 		align-items: center;
-		background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
 		border-radius: 15rpx;
 		padding: 30rpx;
+
+		&.points {
+			background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+
+			.reward-value {
+				color: #ff9500;
+			}
+		}
+
+		&.coins {
+			background: linear-gradient(135deg, #fffef5 0%, #fff8dc 100%);
+
+			.reward-value {
+				color: #ffd700;
+			}
+		}
 	}
 
 	.reward-icon {
@@ -983,52 +1088,131 @@
 	.reward-value {
 		font-size: 36rpx;
 		font-weight: bold;
-		color: #ff9500;
 	}
 
 	/* AI评价样式 */
 	.ai-card {
-		background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-		border-radius: 15rpx;
-		padding: 30rpx;
+		background-color: #fff3e0;
+		border-radius: 12rpx;
+		padding: 15rpx;
 	}
 
 	.ai-score {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		margin-bottom: 20rpx;
-	}
-
-	.score-value {
-		font-size: 60rpx;
-		font-weight: bold;
-		color: #2196f3;
+		margin-bottom: 10rpx;
 	}
 
 	.score-label {
 		font-size: 24rpx;
+		color: #999;
+		margin-right: 15rpx;
+	}
+
+	.score-value {
+		font-size: 32rpx;
+		font-weight: bold;
+
+		&.high {
+			color: #4caf50;
+		}
+
+		&.medium {
+			color: #ff9500;
+		}
+
+		&.low {
+			color: #f44336;
+		}
+	}
+
+	.ai-comment {
+		font-size: 24rpx;
 		color: #666;
+		display: block;
+		margin-bottom: 10rpx;
 	}
 
-	.ai-stars {
+	.ai-detailed-container {
+		margin-top: 10rpx;
+	}
+
+	.ai-detailed-header {
 		display: flex;
-		justify-content: center;
-		margin-bottom: 20rpx;
+		align-items: center;
+		justify-content: space-between;
+		background-color: rgba(255, 255, 255, 0.7);
+		border-radius: 8rpx;
+		padding: 12rpx;
 	}
 
-	.star {
-		font-size: 40rpx;
-		color: #ffc107;
-		margin: 0 5rpx;
+	.detailed-label {
+		font-size: 22rpx;
+		color: #999;
 	}
 
-	.ai-comment, .ai-suggestion {
-		margin-bottom: 15rpx;
+	.toggle-icon {
+		font-size: 20rpx;
+		color: #999;
+		transition: transform 0.3s ease;
+		transform: rotate(-90deg);
+
+		&.expanded {
+			transform: rotate(0deg);
+		}
 	}
 
-	.ai-comment:last-child, .ai-suggestion:last-child {
-		margin-bottom: 0;
+	.ai-detailed-content {
+		background-color: rgba(255, 255, 255, 0.7);
+		border-radius: 0 0 8rpx 8rpx;
+		padding: 15rpx;
+		margin-top: 4rpx;
+	}
+
+	.detailed-item {
+		padding: 12rpx;
+		background-color: #fff;
+		border-radius: 8rpx;
+		margin-bottom: 10rpx;
+
+		&:last-child {
+			margin-bottom: 0;
+		}
+	}
+
+	.item-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 8rpx;
+	}
+
+	.item-question {
+		font-size: 24rpx;
+		color: #333;
+		font-weight: 500;
+	}
+
+	.item-status {
+		font-size: 22rpx;
+		padding: 4rpx 12rpx;
+		border-radius: 20rpx;
+
+		&.correct {
+			background-color: #e8f5e9;
+			color: #4caf50;
+		}
+
+		&.wrong {
+			background-color: #ffebee;
+			color: #f44336;
+		}
+	}
+
+	.item-feedback {
+		font-size: 22rpx;
+		color: #666;
+		line-height: 1.5;
 	}
 
 	.comment-label, .suggestion-label {

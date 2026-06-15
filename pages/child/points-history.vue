@@ -10,7 +10,11 @@
 					<text class="child-name">{{ currentChild?.name || '未知儿童' }}</text>
 				</view>
 				<view class="header-right">
-					<text class="total-points">{{ totalPoints }} 积分</text>
+					<view class="points-info">
+						<text class="total-points">{{ totalPoints }} 积分</text>
+						<text class="total-coins">{{ totalCoins.toFixed(1) }} 金币</text>
+					</view>
+					<text class="update-tip">每日0点更新</text>
 				</view>
 			</view>
 		</view>
@@ -19,6 +23,18 @@
 			<view class="tab-item" :class="{ active: activeTab === 'all' }" @click="switchTab('all')">全部</view>
 			<view class="tab-item" :class="{ active: activeTab === 'earn' }" @click="switchTab('earn')">获得</view>
 			<view class="tab-item" :class="{ active: activeTab === 'spend' }" @click="switchTab('spend')">消费</view>
+		</view>
+
+		<view class="time-filter">
+			<view 
+				class="filter-item" 
+				v-for="item in timeFilters" 
+				:key="item.value"
+				:class="{ active: activeTimeFilter === item.value }"
+				@click="switchTimeFilter(item.value)"
+			>
+				{{ item.label }}
+			</view>
 		</view>
 
 		<scroll-view class="history-list" scroll-y>
@@ -33,6 +49,10 @@
 				<view class="item-info">
 					<text class="item-title">{{ item.description }}</text>
 					<text class="item-time">{{ item.time }}</text>
+					<view class="points-detail" v-if="item.base_points > 0 || item.reward_points > 0">
+					<text class="base-points" v-if="item.base_points > 0">积分: {{ item.base_points }}</text>
+					<text class="reward-points" v-if="item.reward_points > 0">金币: {{ item.reward_points.toFixed(1) }}</text>
+				</view>
 				</view>
 				<view class="item-amount" :class="item.type">
 					{{ item.type === 'earn' ? '+' : '-' }}{{ item.amount }}
@@ -51,16 +71,32 @@ export default {
 		return {
 			currentChild: null,
 			totalPoints: 0,
+			totalCoins: 0,
 			activeTab: 'all',
-			historyList: []
+			activeTimeFilter: 'all',
+			historyList: [],
+			timeFilters: [
+				{ label: '全部', value: 'all' },
+				{ label: '今日', value: 'today' },
+				{ label: '本周', value: 'week' },
+				{ label: '本月', value: 'month' },
+				{ label: '本年', value: 'year' }
+			]
 		}
 	},
 	computed: {
 		filteredHistory() {
-			if (this.activeTab === 'all') {
-				return this.historyList
+			let filtered = this.historyList
+			
+			// 类型筛选
+			if (this.activeTab !== 'all') {
+				filtered = filtered.filter(item => item.type === this.activeTab)
 			}
-			return this.historyList.filter(item => item.type === this.activeTab)
+			
+			// 时间筛选
+			filtered = this.filterByTime(filtered)
+			
+			return filtered
 		}
 	},
 	onLoad() {
@@ -73,7 +109,8 @@ export default {
 			try {
 				this.currentChild = await UserManager.getCurrentChild()
 				if (this.currentChild) {
-					this.totalPoints = this.currentChild.total_points || 0
+					this.totalPoints = this.currentChild.total_points || this.currentChild.base_points || 0
+					this.totalCoins = this.currentChild.total_coins || this.currentChild.reward_points || 0
 				}
 			} catch (error) {
 				console.error('[Points History] 加载儿童信息失败:', error)
@@ -84,24 +121,42 @@ export default {
 			try {
 				uni.showLoading({ title: '加载中...' })
 				
-				if (!this.currentChild || !this.currentChild.id) {
+				if (!this.currentChild) {
 					this.historyList = []
 					return
 				}
 
-				const filter = { child_id: this.currentChild.child_id || this.currentChild.id }
+				// 获取当前儿童的ID（支持 child_id 和 id 两种格式）
+				const childId = this.currentChild.child_id || this.currentChild.id
+				if (!childId) {
+					this.historyList = []
+					return
+				}
+
+				// 查询积分记录表，筛选当前儿童的积分记录
+				const filter = { child_id: String(childId) }
 				const result = await feishuRequest.queryRecords('积分记录表', filter)
 
 				if (result.success && result.data && result.data.length > 0) {
 					this.historyList = result.data
-						.sort((a, b) => new Date(b.fields.created_at || 0) - new Date(a.fields.created_at || 0))
-						.map(item => ({
-							id: item.record_id,
-							description: this.parseTextField(item.fields.description) || '积分变动',
-							amount: item.fields.amount || 0,
-							type: item.fields.type === 'spend' ? 'spend' : 'earn',
-							time: this.formatTime(item.fields.created_at)
-						}))
+						.sort((a, b) => new Date(b.fields.created_time || 0) - new Date(a.fields.created_time || 0))
+						.map(item => {
+							// 获取基础积分和奖励积分
+							const basePoints = item.fields.base_points || 0
+							const rewardPoints = item.fields.reward_points || 0
+							const totalAmount = basePoints + rewardPoints
+							
+							return {
+								id: item.record_id,
+								description: this.parseTextField(item.fields.description) || '积分变动',
+								amount: totalAmount,
+								base_points: basePoints,
+								reward_points: rewardPoints,
+								type: this.parseTextField(item.fields.type) === '消费' ? 'spend' : 'earn',
+								time: this.formatTime(item.fields.created_time),
+								created_time: item.fields.created_time
+							}
+						})
 				} else {
 					this.historyList = []
 				}
@@ -111,6 +166,40 @@ export default {
 			} finally {
 				uni.hideLoading()
 			}
+		},
+
+		filterByTime(list) {
+			if (this.activeTimeFilter === 'all') {
+				return list
+			}
+
+			const now = new Date()
+			let startTime = null
+
+			switch (this.activeTimeFilter) {
+				case 'today':
+					startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+					break
+				case 'week':
+					// 获取本周一
+					const dayOfWeek = now.getDay()
+					const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+					startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset)
+					break
+				case 'month':
+					startTime = new Date(now.getFullYear(), now.getMonth(), 1)
+					break
+				case 'year':
+					startTime = new Date(now.getFullYear(), 0, 1)
+					break
+				default:
+					return list
+			}
+
+			return list.filter(item => {
+				if (!item.created_time) return false
+				return new Date(item.created_time) >= startTime
+			})
 		},
 
 		parseTextField(field) {
@@ -139,6 +228,10 @@ export default {
 
 		switchTab(tab) {
 			this.activeTab = tab
+		},
+
+		switchTimeFilter(filter) {
+			this.activeTimeFilter = filter
 		},
 
 		goBack() {
@@ -202,6 +295,15 @@ export default {
 
 .header-right {
 	margin-left: 20rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+}
+
+.points-info {
+	display: flex;
+	flex-direction: column;
+	gap: 8rpx;
 }
 
 .total-points {
@@ -211,6 +313,21 @@ export default {
 	background-color: rgba(255, 255, 255, 0.2);
 	padding: 10rpx 20rpx;
 	border-radius: 20rpx;
+}
+
+.total-coins {
+	font-size: 28rpx;
+	color: #ffd700;
+	font-weight: bold;
+	background-color: rgba(255, 215, 0, 0.2);
+	padding: 10rpx 20rpx;
+	border-radius: 20rpx;
+}
+
+.update-tip {
+	font-size: 20rpx;
+	color: rgba(255, 255, 255, 0.7);
+	margin-top: 5rpx;
 }
 
 .tabs {
@@ -235,8 +352,31 @@ export default {
 	}
 }
 
+.time-filter {
+	display: flex;
+	background-color: #fff;
+	padding: 15rpx 20rpx;
+	border-bottom: 1rpx solid #eee;
+	gap: 15rpx;
+	flex-wrap: wrap;
+}
+
+.filter-item {
+	font-size: 24rpx;
+	color: #666;
+	padding: 10rpx 20rpx;
+	border-radius: 20rpx;
+	background-color: #f5f5f5;
+	transition: all 0.3s;
+
+	&.active {
+		background-color: #667eea;
+		color: #fff;
+	}
+}
+
 .history-list {
-	height: calc(100vh - 240rpx);
+	height: calc(100vh - 300rpx);
 	padding: 20rpx;
 }
 
@@ -303,6 +443,29 @@ export default {
 .item-time {
 	font-size: 24rpx;
 	color: #999;
+	display: block;
+	margin-bottom: 8rpx;
+}
+
+.points-detail {
+	display: flex;
+	gap: 15rpx;
+}
+
+.base-points {
+	font-size: 22rpx;
+	color: #666;
+	background-color: #f0f0f0;
+	padding: 4rpx 12rpx;
+	border-radius: 10rpx;
+}
+
+.reward-points {
+	font-size: 22rpx;
+	color: #ffd700;
+	background-color: #fffef5;
+	padding: 4rpx 12rpx;
+	border-radius: 10rpx;
 }
 
 .item-amount {

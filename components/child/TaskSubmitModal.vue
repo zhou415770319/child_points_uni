@@ -40,6 +40,8 @@
 </template>
 
 <script>
+	import { feishuRequest } from '@/common/feishu-request.js'
+	
 	export default {
 		name: 'TaskSubmitModal',
 		props: {
@@ -55,7 +57,8 @@
 		data() {
 			return {
 				files: [],
-				remark: ''
+				remark: '',
+				isUploading: false
 			}
 		},
 		watch: {
@@ -70,16 +73,59 @@
 			close() {
 				this.$emit('close')
 			},
-			chooseImage() {
-				uni.chooseImage({
-					count: 9 - this.files.length,
-					sizeType: ['compressed'],
-					sourceType: ['album', 'camera'],
-					success: (res) => {
-						this.files = [...this.files, ...res.tempFiles]
+			async chooseImage() {
+			if (this.isUploading) return
+			
+			uni.chooseImage({
+				count: 9 - this.files.length,
+				sizeType: ['compressed'],
+				sourceType: ['album', 'camera'],
+				success: async (res) => {
+					this.isUploading = true
+					try {
+						// 先获取 objToken
+						let objToken = null
+						const nodeResult = await feishuRequest.getNodeByToken()
+						if (nodeResult.success && nodeResult.objToken) {
+							objToken = nodeResult.objToken
+						} else {
+							console.error('[TaskSubmitModal] 获取 objToken 失败:', nodeResult.message || '未知错误')
+							uni.showToast({ title: '上传失败', icon: 'none' })
+							this.isUploading = false
+							return
+						}
+						
+						// 上传图片到飞书并获取 fileToken
+						const uploadPromises = res.tempFiles.map(async (file) => {
+							let fileToken = null
+							try {
+								const result = await feishuRequest.uploadFile(file.path, objToken)
+								if (result.success && result.fileToken) {
+									fileToken = result.fileToken
+								} else {
+									console.error('[TaskSubmitModal] 图片上传失败:', result.message || '未知错误')
+								}
+							} catch (error) {
+								console.error('[TaskSubmitModal] 图片上传异常:', error.message)
+							}
+							return {
+								path: file.path,
+								size: file.size,
+								fileToken: fileToken
+							}
+						})
+						
+						const uploadedFiles = await Promise.all(uploadPromises)
+						this.files = [...this.files, ...uploadedFiles]
+					} catch (error) {
+						console.error('[TaskSubmitModal] 图片上传失败:', error)
+						uni.showToast({ title: '图片上传失败', icon: 'none' })
+					} finally {
+						this.isUploading = false
 					}
-				})
-			},
+				}
+			})
+		},
 			removeFile(index) {
 				this.files.splice(index, 1)
 			},

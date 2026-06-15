@@ -19,9 +19,13 @@
 				<text class="stat-value">{{ pendingReviews }}</text>
 				<text class="stat-label">待审核</text>
 			</view>
-			<view class="stat-card">
+			<view class="stat-card points">
 				<text class="stat-value">{{ totalPoints }}</text>
 				<text class="stat-label">总积分</text>
+			</view>
+			<view class="stat-card coins">
+				<text class="stat-value">{{ totalCoins.toFixed(1) }}</text>
+				<text class="stat-label">总金币</text>
 			</view>
 		</view>
 
@@ -38,11 +42,17 @@
 					</view>
 					<view class="child-info">
 						<text class="child-name">{{ child.name }}</text>
-						<text class="child-detail">{{ child.grade }}年级 · {{ child.age }}岁</text>
+						<text class="child-detail">{{ child.grade }} · {{ child.age }}岁</text>
 					</view>
 					<view class="child-points">
-						<text class="points-value">{{ child.total_points }}</text>
-						<text class="points-label">积分</text>
+						<view class="point-tag points">
+							<text class="point-value">{{ child.total_points }}</text>
+							<text class="point-label">积分</text>
+						</view>
+						<view class="point-tag coins">
+							<text class="point-value">{{ (child.total_reward_points || 0).toFixed(1) }}</text>
+							<text class="point-label">金币</text>
+						</view>
 					</view>
 					<text class="arrow">›</text>
 				</view>
@@ -59,7 +69,7 @@
 					<view class="task-icon">{{ getTaskIcon(task.type) }}</view>
 					<view class="task-info">
 						<text class="task-title">{{ task.title }}</text>
-						<text class="task-detail">{{ task.child_name }} · {{ task.base_points }}积分</text>
+						<text class="task-detail">{{ task.child_name }} · ⭐{{ task.base_points }}积分 <image class="coin-icon" src="/static/svg/jinbi.svg" mode="aspectFit" />{{ task.reward_points }}金币</text>
 					</view>
 					<view class="task-status" :class="task.status">
 						{{ getStatusText(task.status) }}
@@ -85,6 +95,73 @@
 				<text class="empty-text">暂无待审核打卡</text>
 			</view>
 		</view>
+
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">🎁 待审核兑换</text>
+				<text class="section-link" @click="goToRedemptions">去审核 ›</text>
+			</view>
+			<view class="redemption-list" v-if="pendingRedemptions.length > 0">
+				<view class="redemption-item" v-for="redemption in pendingRedemptions" :key="redemption.id">
+					<view class="redemption-child">{{ redemption.child_name }}</view>
+					<view class="redemption-info">
+						<text class="redemption-gift">{{ redemption.gift_name }}</text>
+						<text class="redemption-points">消耗 ⭐{{ redemption.base_points }}积分 <image class="coin-icon" src="/static/svg/jinbi.svg" mode="aspectFit" />{{ redemption.reward_points }}金币</text>
+					</view>
+					<text class="redemption-time">{{ redemption.created_time }}</text>
+					<button class="review-btn" @click="showRedemptionModal(redemption)">审核</button>
+				</view>
+			</view>
+			<view class="empty-state" v-else>
+				<text class="empty-icon">🎁</text>
+				<text class="empty-text">暂无待审核兑换</text>
+			</view>
+		</view>
+
+		<!-- 兑换审核弹框 -->
+		<view class="modal-overlay" v-if="showRedemptionReview" @click="closeRedemptionModal">
+			<view class="modal-content" @click.stop>
+				<view class="modal-header">
+					<text class="modal-title">兑换审核</text>
+					<text class="modal-close" @click="closeRedemptionModal">×</text>
+				</view>
+				<view class="modal-body" v-if="currentRedemption">
+					<view class="modal-row">
+						<text class="modal-label">兑换儿童</text>
+						<text class="modal-value">{{ currentRedemption.child_name }}</text>
+					</view>
+					<view class="modal-row">
+						<text class="modal-label">兑换礼品</text>
+						<view class="modal-value gift-info">
+							<text>{{ currentRedemption.gift_name }}</text>
+							<image v-if="currentRedemption.gift_image" class="gift-image" :src="currentRedemption.gift_image" mode="aspectFit" />
+						</view>
+					</view>
+					<view class="modal-row">
+						<text class="modal-label">消耗积分</text>
+						<text class="modal-value">⭐{{ currentRedemption.base_points }}积分</text>
+					</view>
+					<view class="modal-row">
+						<text class="modal-label">消耗金币</text>
+						<view class="modal-value">
+							<image class="coin-icon" src="/static/svg/jinbi.svg" mode="aspectFit" />{{ currentRedemption.reward_points }}金币
+						</view>
+					</view>
+					<view class="modal-row">
+						<text class="modal-label">兑换时间</text>
+						<text class="modal-value">{{ currentRedemption.created_time }}</text>
+					</view>
+					<view class="modal-row">
+						<text class="modal-label">备注</text>
+						<text class="modal-value">{{ currentRedemption.remark || '无' }}</text>
+					</view>
+				</view>
+				<view class="modal-footer">
+					<button class="modal-btn cancel" @click="rejectRedemption">拒绝</button>
+					<button class="modal-btn confirm" @click="acceptRedemption">通过</button>
+				</view>
+			</view>
+		</view>
 		<custom-tab-bar ref="tabBar"></custom-tab-bar>
 	</view>
 </template>
@@ -101,33 +178,27 @@
 			return {
 				currentDate: '',
 				currentParent: null,
-				todayTasks: 5,
-				pendingReviews: 2,
+				todayTasks: 0,
+				pendingReviews: 0,
+				pendingRedemptionCount: 0,
 				totalPoints: 0,
+				totalCoins: 0,
 				children: [],
-				todayTasksList: [
-					{ id: 1, title: '语文阅读 30 分钟', type: 'reading', child_name: '小明', base_points: 10, status: 'pending' },
-					{ id: 2, title: '数学练习 10 题', type: 'math', child_name: '小明', base_points: 15, status: 'completed' },
-					{ id: 3, title: '英语单词背诵', type: 'english', child_name: '小红', base_points: 10, status: 'pending' },
-					{ id: 4, title: '画画练习', type: 'art', child_name: '小红', base_points: 8, status: 'pending' }
-				],
-				pendingCheckins: [
-					{ id: 1, child_name: '小明', task_title: '语文阅读 30 分钟', checkin_time: '今天 14:30' },
-					{ id: 2, child_name: '小红', task_title: '英语单词背诵', checkin_time: '今天 15:00' }
-				]
+				todayTasksList: [],
+				pendingCheckins: [],
+				pendingRedemptions: [],
+				showRedemptionReview: false,
+				currentRedemption: null
 			}
 		},
 		async onLoad() {
 			const now = new Date()
 			this.currentDate = `${now.getMonth() + 1}月${now.getDate()}日 ${['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()]}`
 			
-			// 先加载用户信息和儿童列表，等待完成后再加载其他数据
+			// 先加载用户信息和儿童列表
 			await this.loadUserData()
-			// 并行加载今日任务和待审核打卡
-			await Promise.all([
-				this.loadTodayTasks(),
-				this.loadPendingCheckins()
-			])
+			// 加载今日任务和待审核打卡
+			await this.loadTasksAndCheckins()
 		},
 		onShow() {
 			if (this.$refs.tabBar) {
@@ -162,8 +233,9 @@
 						// 缓存儿童列表，供其他页面使用
 						UserManager.setChildren(this.children)
 						
-						// 计算总积分
+						// 计算总积分和总金币
 						this.totalPoints = this.children.reduce((sum, child) => sum + (child.total_points || 0), 0)
+						this.totalCoins = this.children.reduce((sum, child) => sum + (child.total_reward_points || 0), 0)
 					}
 				} catch (error) {
 					console.error('[Dashboard] 加载用户数据失败:', error)
@@ -180,28 +252,39 @@
 			},
 			
 			/**
-			 * 加载今日任务（从多维表格获取，筛选掉待审核的任务）
+			 * 加载今日任务、待审核打卡和待审核兑换（通过单次请求获取数据）
 			 */
-			async loadTodayTasks() {
+			async loadTasksAndCheckins() {
+				uni.showLoading({ title: '加载中...' })
 				try {
-					const result = await feishuRequest.queryRecords('任务表')
+					// 并行查询任务表、打卡记录表和兑换记录表
+					// 获取今天的开始时间戳（毫秒）
+					const today = new Date()
+					today.setHours(0, 0, 0, 0)
+					const todayTimestamp = today.getTime().toString()
 					
-					if (result.success && result.data && result.data.length > 0) {
-						// 筛选掉状态为待审核的任务
-						const filteredTasks = result.data.filter(item => {
-							const status = item.fields.status || ''
-							return status !== '待审核' && status !== 'reviewing'
-						})
+					const [tasksResult, checkinsResult, redemptionsResult] = await Promise.all([
+						// 查询今日任务：start_time是今天
+						feishuRequest.queryRecords('任务表', { start_time: ['ExactDate', todayTimestamp] }),
+						// 查询待审核打卡：review_status等于待审核
+						feishuRequest.queryRecords('打卡记录表', { review_status: '待审核' }),
+						// 查询待审核兑换：status等于待审核
+						feishuRequest.queryRecords('兑换记录表', { status: '待审核' })
+					])
+					
+					// 处理今日任务
+					if (tasksResult.success && tasksResult.data) {
+						const taskResults = tasksResult.data.sort((a, b) => 
+							new Date(b.fields.created_at || 0) - new Date(a.fields.created_at || 0)
+						)
 						
-						this.todayTasksList = filteredTasks.slice(0, 5).map(item => {
-							// 处理title字段：飞书多维表格返回格式可能是[{text: "值"}]
+						this.todayTasksList = taskResults.slice(0, 5).map(item => {
 							const title = item.fields.title 
 								? (Array.isArray(item.fields.title) && item.fields.title[0] && item.fields.title[0].text 
 									? item.fields.title[0].text 
 									: item.fields.title)
 								: ''
 							
-							// 处理child_id字段：飞书多维表格返回格式可能是[{text: "值"}]
 							let childId = item.fields.child_id || ''
 							if (Array.isArray(childId) && childId[0] && childId[0].text) {
 								childId = childId[0].text
@@ -216,36 +299,26 @@
 								child_id: childId,
 								child_name: this.getChildName(childId),
 								base_points: item.fields.base_points || 0,
+								reward_points: item.fields.reward_points || 0,
 								status: item.fields.status || 'pending'
 							}
 						})
 						this.todayTasks = this.todayTasksList.length
-						console.log('[Dashboard] 今日任务列表:', this.todayTasksList)
+					} else {
+						this.todayTasksList = []
+						this.todayTasks = 0
 					}
-				} catch (error) {
-					console.error('[Dashboard] 加载今日任务失败:', error)
-				}
-			},
-			
-			/**
-			 * 加载待审核打卡
-			 */
-			async loadPendingCheckins() {
-				try {
-					const result = await feishuRequest.queryRecords('任务表')
 					
-					if (result.success && result.data && result.data.length > 0) {
-						// 筛选出状态为待审核的任务作为待审核打卡
-						const pendingTasks = result.data.filter(item => {
-							const status = item.fields.status || ''
-							return status === '待审核' || status === 'reviewing'
-						})
-						
-						this.pendingCheckins = pendingTasks.slice(0, 5).map(item => {
-							const title = item.fields.title 
-								? (Array.isArray(item.fields.title) && item.fields.title[0] && item.fields.title[0].text 
-									? item.fields.title[0].text 
-									: item.fields.title)
+					// 处理待审核打卡列表
+					if (checkinsResult.success && checkinsResult.data) {
+						const sortedData = checkinsResult.data.sort((a, b) => 
+							new Date(b.fields.created_time || 0) - new Date(a.fields.created_time || 0)
+						)
+						this.pendingCheckins = sortedData.slice(0, 5).map(item => {
+							const title = item.fields.content 
+								? (Array.isArray(item.fields.content) && item.fields.content[0] && item.fields.content[0].text 
+									? item.fields.content[0].text 
+									: item.fields.content)
 								: ''
 							
 							let childId = item.fields.child_id || ''
@@ -256,7 +329,7 @@
 							}
 							
 							const childName = this.getChildName(childId)
-							const createdAt = item.fields.created_at || item.fields.updated_at || ''
+							const createdAt = item.fields.created_time || ''
 							const date = createdAt ? new Date(createdAt) : new Date()
 							const timeStr = `${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
 							
@@ -268,10 +341,66 @@
 							}
 						})
 						this.pendingReviews = this.pendingCheckins.length
-						console.log('[Dashboard] 待审核打卡:', this.pendingCheckins)
+					} else {
+						this.pendingCheckins = []
+						this.pendingReviews = 0
 					}
+					
+					// 处理待审核兑换列表
+					if (redemptionsResult.success && redemptionsResult.data) {
+						const sortedRedemptions = redemptionsResult.data.sort((a, b) => 
+							new Date(b.fields.created_time || 0) - new Date(a.fields.created_time || 0)
+						)
+						this.pendingRedemptions = sortedRedemptions.slice(0, 5).map(item => {
+							const giftName = this.parseTextField(item.fields.gift_name)
+							const basePoints = item.fields.base_points || 0
+							const rewardPoints = item.fields.reward_points || 0
+							const remark = this.parseTextField(item.fields.remark)
+							const giftImage = item.fields.gift_image ? (item.fields.gift_image[0]?.url || '') : ''
+							
+							let childId = item.fields.child_id || ''
+							if (Array.isArray(childId) && childId[0] && childId[0].text) {
+								childId = childId[0].text
+							} else if (typeof childId === 'object' && childId.type === 1 && childId.value && Array.isArray(childId.value) && childId.value.length > 0) {
+								childId = childId.value[0].text || ''
+							}
+							
+							const childName = this.getChildName(childId)
+							const createdAt = item.fields.created_time || ''
+							const date = createdAt ? new Date(createdAt) : new Date()
+							const timeStr = `${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+							
+							return {
+								id: item.record_id,
+								child_id: childId,
+								child_name: childName,
+								gift_name: giftName,
+								gift_image: giftImage,
+								base_points: basePoints,
+								reward_points: rewardPoints,
+								remark: remark,
+								created_time: timeStr
+							}
+						})
+						this.pendingRedemptionCount = this.pendingRedemptions.length
+					} else {
+						this.pendingRedemptions = []
+						this.pendingRedemptionCount = 0
+					}
+					
+					console.log('[Dashboard] 今日任务:', this.todayTasksList)
+					console.log('[Dashboard] 待审核打卡:', this.pendingCheckins)
+					console.log('[Dashboard] 待审核兑换:', this.pendingRedemptions)
 				} catch (error) {
-					console.error('[Dashboard] 加载待审核打卡失败:', error)
+					console.error('[Dashboard] 加载数据失败:', error)
+					this.todayTasksList = []
+					this.todayTasks = 0
+					this.pendingCheckins = []
+					this.pendingReviews = 0
+					this.pendingRedemptions = []
+					this.pendingRedemptionCount = 0
+				} finally {
+					uni.hideLoading()
 				}
 			},
 			async loadCategories() {
@@ -296,6 +425,132 @@
 				}
 				return texts[status] || status
 			},
+			
+			/**
+			 * 解析多维表格文本字段
+			 */
+			parseTextField(field) {
+				if (!field) return ''
+				if (typeof field === 'object' && field.type === 1 && field.value && Array.isArray(field.value) && field.value.length > 0) {
+					return field.value[0].text || ''
+				}
+				if (Array.isArray(field) && field[0] && field[0].text) {
+					return field[0].text
+				}
+				if (typeof field === 'string') {
+					return field
+				}
+				return ''
+			},
+			
+			/**
+			 * 显示兑换审核弹框
+			 */
+			showRedemptionModal(redemption) {
+				this.currentRedemption = redemption
+				this.showRedemptionReview = true
+			},
+			
+			/**
+			 * 关闭兑换审核弹框
+			 */
+			closeRedemptionModal() {
+				this.showRedemptionReview = false
+				this.currentRedemption = null
+			},
+			
+			/**
+			 * 通过兑换申请
+			 */
+			async acceptRedemption() {
+				if (!this.currentRedemption) return
+				
+				// 保存引用，避免异步回调中丢失
+				const redemption = this.currentRedemption
+				
+				uni.showModal({
+					title: '确认通过',
+					content: `确定要通过 ${redemption.child_name} 的兑换申请吗？`,
+					success: async (res) => {
+						if (res.confirm) {
+							uni.showLoading({ title: '处理中...' })
+							try {
+								// 更新兑换记录状态为已通过
+								const result = await feishuRequest.updateRecord('兑换记录表', redemption.id, {
+									status: '已通过'
+								})
+								
+								if (result.success) {
+									// 在积分记录表添加一条记录（负数表示扣除）
+									const pointsRecord = {
+										child_id: redemption.child_id,
+										type: '消费',
+										description: `兑换礼品: ${redemption.gift_name}`,
+										base_points: -redemption.base_points,
+										reward_points: -redemption.reward_points,
+										created_time: Date.now()
+									}
+									await feishuRequest.addRecord('积分记录表', pointsRecord)
+									
+									// 从列表中移除已审核的兑换记录
+									this.pendingRedemptions = this.pendingRedemptions.filter(r => r.id !== redemption.id)
+									this.pendingRedemptionCount = this.pendingRedemptions.length
+									uni.showToast({ title: '审核通过', icon: 'success' })
+								} else {
+									console.error('[Dashboard] 更新兑换状态失败:', result.message)
+									uni.showToast({ title: '审核失败', icon: 'none' })
+								}
+							} catch (error) {
+								console.error('[Dashboard] 审核兑换异常:', error)
+								uni.showToast({ title: '审核失败', icon: 'none' })
+							} finally {
+								uni.hideLoading()
+								this.closeRedemptionModal()
+							}
+						}
+					}
+				})
+			},
+			
+			/**
+			 * 拒绝兑换申请
+			 */
+			async rejectRedemption() {
+				if (!this.currentRedemption) return
+				
+				uni.showModal({
+					title: '确认拒绝',
+					content: `确定要拒绝 ${this.currentRedemption.child_name} 的兑换申请吗？`,
+					success: async (res) => {
+						if (res.confirm) {
+							uni.showLoading({ title: '处理中...' })
+							try {
+								// 更新兑换记录状态为已拒绝
+								const result = await feishuRequest.updateRecord('兑换记录表', this.currentRedemption.id, {
+									status: '已拒绝'
+								})
+								
+								if (result.success) {
+									// 从列表中移除已审核的兑换记录
+									this.pendingRedemptions = this.pendingRedemptions.filter(r => r.id !== this.currentRedemption.id)
+									this.pendingRedemptionCount = this.pendingRedemptions.length
+									uni.showToast({ title: '已拒绝', icon: 'none' })
+								} else {
+									console.error('[Dashboard] 更新兑换状态失败:', result.message)
+									uni.showToast({ title: '操作失败', icon: 'none' })
+								}
+							} catch (error) {
+								console.error('[Dashboard] 拒绝兑换异常:', error)
+								uni.showToast({ title: '操作失败', icon: 'none' })
+							} finally {
+								uni.hideLoading()
+								this.closeRedemptionModal()
+							}
+						}
+					}
+				})
+			},
+			
 			goToChildren() {
 				uni.navigateTo({ url: '/pages/parent/children' })
 			},
@@ -307,6 +562,9 @@
 			},
 			goToCheckins() {
 				uni.navigateTo({ url: '/pages/parent/checkins' })
+			},
+			goToRedemptions() {
+				uni.navigateTo({ url: '/pages/parent/redemptions' })
 			},
 			goToUcenter() {
 				uni.navigateTo({ url: '/pages/ucenter/ucenter' })
@@ -372,20 +630,51 @@
 		flex: 1;
 		background-color: #fff;
 		border-radius: 16rpx;
-		padding: 25rpx;
+		padding: 25rpx 15rpx;
 		text-align: center;
 		box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.08);
+		position: relative;
+		overflow: hidden;
+
+		&::before {
+			content: '';
+			position: absolute;
+			top: 0;
+			left: 0;
+			right: 0;
+			height: 4rpx;
+			background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+		}
+
+		&.points {
+			&::before {
+				background: linear-gradient(90deg, #ff9500 0%, #ffb74d 100%);
+			}
+			.stat-value {
+				color: #ff9500;
+			}
+		}
+
+		&.coins {
+			&::before {
+				background: linear-gradient(90deg, #ffd700 0%, #ffec8b 100%);
+			}
+			.stat-value {
+				color: #ffd700;
+			}
+		}
 	}
 
 	.stat-value {
-		font-size: 48rpx;
+		font-size: 44rpx;
 		font-weight: bold;
 		color: #667eea;
 		display: block;
+		line-height: 1.2;
 	}
 
 	.stat-label {
-		font-size: 24rpx;
+		font-size: 22rpx;
 		color: #999;
 		margin-top: 8rpx;
 	}
@@ -472,18 +761,41 @@
 	}
 
 	.child-points {
-		text-align: right;
+		display: flex;
+		gap: 12rpx;
 	}
 
-	.points-value {
-		font-size: 32rpx;
+	.point-tag {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 10rpx 16rpx;
+		border-radius: 10rpx;
+		background-color: #f8f8f8;
+
+		&.points {
+			.point-value {
+				color: #ff9500;
+			}
+			background: linear-gradient(135deg, #fff8f0 0%, #fff0e0 100%);
+		}
+
+		&.coins {
+			.point-value {
+				color: #ffd700;
+			}
+			background: linear-gradient(135deg, #fffef5 0%, #fff8dc 100%);
+		}
+	}
+
+	.point-value {
+		font-size: 28rpx;
 		font-weight: bold;
-		color: #ff9500;
 		display: block;
 	}
 
-	.points-label {
-		font-size: 22rpx;
+	.point-label {
+		font-size: 20rpx;
 		color: #999;
 	}
 
@@ -581,6 +893,145 @@
 		color: #999;
 	}
 
+	.redemption-list {
+		display: flex;
+		flex-direction: column;
+		gap: 15rpx;
+	}
+
+	.redemption-item {
+		display: flex;
+		align-items: center;
+		gap: 15rpx;
+		padding: 20rpx;
+		background-color: #fafafa;
+		border-radius: 12rpx;
+	}
+
+	.redemption-info {
+		flex: 1;
+	}
+
+	.redemption-gift {
+		font-size: 28rpx;
+		color: #333;
+		display: block;
+		margin-bottom: 5rpx;
+	}
+
+	.redemption-points {
+		font-size: 22rpx;
+		color: #999;
+	}
+
+	.review-btn {
+		padding: 10rpx 25rpx;
+		font-size: 24rpx;
+		background-color: #667eea;
+		color: #fff;
+		border: none;
+		border-radius: 20rpx;
+	}
+
+	.redemption-time {
+		font-size: 22rpx;
+		color: #999;
+		margin-right: 15rpx;
+	}
+
+	/* 弹框样式 */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 10000;
+	}
+
+	.modal-content {
+		width: 600rpx;
+		background-color: #fff;
+		border-radius: 20rpx;
+		overflow: hidden;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 30rpx;
+		border-bottom: 1rpx solid #eee;
+	}
+
+	.modal-title {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333;
+	}
+
+	.modal-close {
+		font-size: 48rpx;
+		color: #999;
+		line-height: 1;
+	}
+
+	.modal-body {
+		padding: 30rpx;
+	}
+
+	.modal-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom: 1rpx solid #f0f0f0;
+
+		&:last-child {
+			border-bottom: none;
+		}
+	}
+
+	.modal-label {
+		font-size: 28rpx;
+		color: #999;
+	}
+
+	.modal-value {
+		font-size: 28rpx;
+		color: #333;
+		font-weight: 500;
+	}
+
+	.modal-footer {
+		display: flex;
+		gap: 20rpx;
+		padding: 30rpx;
+		border-top: 1rpx solid #eee;
+	}
+
+	.modal-btn {
+		flex: 1;
+		height: 80rpx;
+		font-size: 30rpx;
+		border: none;
+		border-radius: 40rpx;
+
+		&.cancel {
+			background-color: #f5f5f5;
+			color: #666;
+		}
+
+		&.confirm {
+			background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+			color: #fff;
+		}
+	}
+
 	.empty-state {
 		text-align: center;
 		padding: 40rpx;
@@ -595,5 +1046,26 @@
 	.empty-text {
 		font-size: 28rpx;
 		color: #999;
+	}
+
+	.gift-info {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 10rpx;
+	}
+
+	.gift-image {
+		width: 120rpx;
+		height: 120rpx;
+		border-radius: 12rpx;
+		background-color: #f5f5f5;
+	}
+
+	.coin-icon {
+		width: 28rpx;
+		height: 28rpx;
+		vertical-align: middle;
+		margin-right: 4rpx;
 	}
 </style>

@@ -194,75 +194,41 @@
 				}
 			},
 			async loadChildren() {
-				uni.showLoading({ title: '加载中...' })
-				try {
-					// 使用UserManager从用户表获取当前登录的家长账号
-					const parent = await UserManager.getCurrentParent()
-					const parentAccount = parent?.phone || ''
-					console.log('当前家长---', parent);
-					
-					// 从儿童表获取该家长绑定的儿童列表（使用filter参数在服务端过滤）
-					const result = await feishuRequest.queryRecords('儿童表', { parent_account: parentAccount })
-					console.log('儿童表---', result);
-					
-					if (result.success && result.data && result.data.length > 0) {
-						// 收集头像fileToken
-						const avatarTokens = []
-						result.data.forEach(item => {
-							if (item.fields.avatar && item.fields.avatar.length > 0) {
-								avatarTokens.push(item.fields.avatar[0].file_token)
-							}
-						})
-						
-						// 获取头像URL
-						let avatarUrlMap = {}
-						if (avatarTokens.length > 0) {
-							await feishuRequest.initCloudObject()
-							const urlResult = await feishuRequest.feishutools.getImageUrls({
-								fileTokens: avatarTokens
-							})
-							if (urlResult.success && urlResult.urlMap) {
-								avatarUrlMap = urlResult.urlMap
-							}
-						}
-						
-						// 映射数据
-						this.children = result.data.map(item => {
-							let avatarUrl = ''
-							if (item.fields.avatar && item.fields.avatar.length > 0) {
-								const fileToken = item.fields.avatar[0].file_token
-								avatarUrl = avatarUrlMap[fileToken] || ''
-							}
-							
-							return {
-								id: item.fields.child_id || item.record_id,
-								child_id: item.fields.child_id || item.record_id,
-								name: item.fields.name[0].text,
-								avatar: avatarUrl || this.getRandomAvatar(),
-								age: item.fields.age || 0,
-								grade: item.fields.grade || '',
-								total_points: item.fields.total_points || 0,
-								hobby: item.fields.hobby || ''
-							}
-						})
-					} else {
-						this.children = []
-					}
-					
-					// 如果没有绑定的儿童，提示用户
-					if (this.children.length === 0) {
-						uni.showToast({ title: '暂无绑定的儿童账号', icon: 'none' })
-						return
-					}
-					
-					this.showChildSelect = true
-				} catch (error) {
-					console.error('加载儿童列表失败:', error)
-					uni.showToast({ title: '加载失败', icon: 'none' })
-				} finally {
-					uni.hideLoading()
+			uni.showLoading({ title: '加载中...' })
+			try {
+				// 使用UserManager从用户表获取当前登录的家长账号
+				const parent = await UserManager.getCurrentParent()
+				const parentAccount = parent?.phone || ''
+				console.log('当前家长---', parent);
+				
+				// 使用UserManager获取儿童列表
+				const children = await UserManager.getChildrenByParent(parentAccount)
+				console.log('儿童列表---', children);
+				
+				if (children && children.length > 0) {
+					this.children = children.map(item => ({
+						...item,
+						id: item.child_id || item.id,
+						avatar: item.avatar || this.getRandomAvatar()
+					}))
+				} else {
+					this.children = []
 				}
-			},
+				
+				// 如果没有绑定的儿童，提示用户
+				if (this.children.length === 0) {
+					uni.showToast({ title: '暂无绑定的儿童账号', icon: 'none' })
+					return
+				}
+				
+				this.showChildSelect = true
+			} catch (error) {
+				console.error('加载儿童列表失败:', error)
+				uni.showToast({ title: '加载失败', icon: 'none' })
+			} finally {
+				uni.hideLoading()
+			}
+		},
 			getRandomAvatar() {
 				const avatars = ['👦', '👧', '🧒', '👶']
 				return avatars[Math.floor(Math.random() * avatars.length)]

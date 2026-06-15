@@ -939,6 +939,212 @@ class FeishuRequest {
 			message: '登录成功'
 		}
 	}
+
+	/**
+	 * 创建打卡记录
+	 * @param {Object} task - 任务对象（包含 task_id, title, base_points, reward_points 等）
+	 * @param {String} childId - 儿童ID
+	 * @param {String} remark - 备注信息
+	 * @param {Array} uploadedFiles - 上传的文件列表（可选）
+	 * @returns {Promise<Object>} 创建结果
+	 */
+	async createCheckinRecord({ task, childId, remark = '', uploadedFiles = [] }) {
+		console.log('[FeishuRequest] 创建打卡记录，任务:', task, '儿童 ID:', childId, '备注:', remark)
+		
+		// 校验必要参数
+		if (!task || !task.task_id) {
+			console.error('[FeishuRequest] 任务 ID 为空，无法创建打卡记录')
+			return {
+				success: false,
+				message: '任务 ID 缺失'
+			}
+		}
+		
+		if (!childId) {
+			console.error('[FeishuRequest] 儿童 ID 为空，无法创建打卡记录')
+			return {
+				success: false,
+				message: '儿童 ID 缺失'
+			}
+		}
+		
+		try {
+			// 处理图片文件
+			let imageFieldData = []
+			let uploadSuccessCount = 0
+			
+			if (uploadedFiles && uploadedFiles.length > 0) {
+				imageFieldData = uploadedFiles
+					.filter(file => file.fileToken)
+					.map(file => ({ file_token: file.fileToken }))
+				
+				uploadSuccessCount = imageFieldData.length
+				console.log('[FeishuRequest] 图片 fileToken 提取完成，成功:', uploadSuccessCount, '/', uploadedFiles.length)
+			}
+			
+			// 准备打卡记录数据
+			const checkinData = {
+				task_id: String(task.task_id), // 使用用户自定义的任务 ID
+				child_id: String(childId), // 确保是字符串格式
+				remark: remark.trim() || '',
+				created_time: Date.now(), // Unix 时间戳（毫秒）
+				content: '完成' + (task.title || ''),
+				review_status: '待审核',
+				base_points: task.base_points || 0,
+				reward_points: task.reward_points || 0
+			}
+			
+			// 如果有成功上传的图片，添加到打卡记录的 attachments 字段
+			if (imageFieldData && imageFieldData.length > 0) {
+				checkinData.attachments = imageFieldData
+			}
+			
+			console.log('[FeishuRequest] 创建打卡记录数据:', checkinData)
+			
+			// 创建打卡记录
+			const checkinResult = await this.addRecord('打卡记录表', checkinData)
+			
+			if (!checkinResult.success) {
+				console.error('[FeishuRequest] 创建打卡记录失败:', checkinResult.error)
+				return {
+					success: false,
+					message: '创建打卡记录失败',
+					error: checkinResult.error
+				}
+			}
+			
+			// 提示图片上传结果
+			if (uploadedFiles.length > 0) {
+				if (uploadSuccessCount === uploadedFiles.length) {
+					console.log('[FeishuRequest] 全部图片上传成功')
+				} else {
+					console.warn('[FeishuRequest] 部分图片上传失败，成功:', uploadSuccessCount, '/', uploadedFiles.length)
+				}
+			}
+			
+			return {
+				success: true,
+				recordId: checkinResult.recordId,
+				message: '打卡记录创建成功'
+			}
+		} catch (error) {
+			console.error('[FeishuRequest] 创建打卡记录异常:', error)
+			return {
+				success: false,
+				message: '创建打卡记录失败',
+				error: error.message
+			}
+		}
+	}
+
+	/**
+	 * 获取滚动字幕内容
+	 * @param {Object} config - 配置对象
+	 * @param {string} config.type - 内容类型：idiom(成语故事), english(英语短句), technology(科技知识), literature(文学常识), riddle(脑筋急转弯), custom(自定义)
+	 * @param {string} config.customContent - 自定义内容（type为custom时使用）
+	 * @returns {Promise<Object>} 滚动字幕内容
+	 */
+	async getScrollContent(config = {}) {
+		console.log('[FeishuRequest] 获取滚动字幕内容，配置:', config)
+		
+		const { type = 'idiom', customContent = '' } = config
+		
+		if (USE_MOCK) {
+			const mockData = {
+				idiom: [
+					{ title: '成语故事', content: '一鸣惊人：比喻平时没有突出的表现，一下子做出惊人的成绩。' },
+					{ title: '成语故事', content: '画蛇添足：比喻做了多余的事，非但无益，反而不合适。' },
+					{ title: '成语故事', content: '亡羊补牢：比喻出了问题以后想办法补救，可以防止继续受损失。' },
+					{ title: '成语故事', content: '刻舟求剑：比喻拘泥成例，不知道跟着情势的变化而改变看法或办法。' },
+					{ title: '成语故事', content: '拔苗助长：比喻违反事物发展的客观规律，急于求成，反而坏事。' },
+					{ title: '成语故事', content: '守株待兔：比喻不主动努力，而存万一的侥幸心理，希望得到意外的收获。' },
+					{ title: '成语故事', content: '狐假虎威：比喻依仗别人的势力欺压人。' }
+				],
+				english: [
+					{ title: '英语短句', content: 'Practice makes perfect. 熟能生巧。' },
+					{ title: '英语短句', content: 'Actions speak louder than words. 行动胜于言语。' },
+					{ title: '英语短句', content: 'Knowledge is power. 知识就是力量。' },
+					{ title: '英语短句', content: 'A journey of a thousand miles begins with a single step. 千里之行，始于足下。' },
+					{ title: '英语短句', content: 'Time flies. 时光飞逝。' },
+					{ title: '英语短句', content: 'Where there is a will, there is a way. 有志者，事竟成。' },
+					{ title: '英语短句', content: 'Reading makes a full man. 读书使人充实。' }
+				],
+				technology: [
+					{ title: '科技知识', content: '中国的"天眼"FAST是世界上最大的单口径射电望远镜，口径达500米。' },
+					{ title: '科技知识', content: '人工智能（AI）是研究、开发用于模拟、延伸和扩展人的智能的理论、方法、技术及应用系统的一门新的技术科学。' },
+					{ title: '科技知识', content: '5G技术可以提供比4G快100倍的数据传输速度，延迟低至1毫秒。' },
+					{ title: '科技知识', content: '太阳能是一种可再生能源，通过光伏板将阳光转化为电能。' },
+					{ title: '科技知识', content: '北斗卫星导航系统是中国自主研发的全球卫星导航系统。' },
+					{ title: '科技知识', content: '量子计算机利用量子力学现象来进行计算，比传统计算机处理某些问题快得多。' },
+					{ title: '科技知识', content: '电动汽车使用电池作为动力源，相比燃油汽车更加环保。' }
+				],
+				literature: [
+					{ title: '文学常识', content: '《红楼梦》是中国古典四大名著之一，作者是曹雪芹。' },
+					{ title: '文学常识', content: '李白是唐代著名诗人，被称为"诗仙"，代表作有《静夜思》《望庐山瀑布》等。' },
+					{ title: '文学常识', content: '鲁迅是中国现代文学的奠基人，代表作有《呐喊》《彷徨》等。' },
+					{ title: '文学常识', content: '《西游记》是明代吴承恩创作的神话小说，讲述了唐僧师徒西天取经的故事。' },
+					{ title: '文学常识', content: '唐诗宋词是中国古代文学的瑰宝。' },
+					{ title: '文学常识', content: '四大名著包括《红楼梦》《三国演义》《水浒传》《西游记》。' },
+					{ title: '文学常识', content: '朱自清是现代著名散文家，代表作《背影》《荷塘月色》等。' }
+				],
+				riddle: [
+					{ title: '脑筋急转弯', content: '什么东西越洗越脏？答案：水' },
+					{ title: '脑筋急转弯', content: '什么车没有轮？答案：风车' },
+					{ title: '脑筋急转弯', content: '什么东西打破了才能用？答案：鸡蛋' },
+					{ title: '脑筋急转弯', content: '什么东西天天都在走，但从来不会移动？答案：钟表' },
+					{ title: '脑筋急转弯', content: '什么东西有四条腿却不会走路？答案：桌子' },
+					{ title: '脑筋急转弯', content: '什么东西越擦越黑？答案：黑板' },
+					{ title: '脑筋急转弯', content: '什么东西买的人知道，卖的人也知道，只有用的人不知道？答案：棺材' }
+				]
+			}
+			
+			if (type === 'custom' && customContent.trim()) {
+				return {
+					success: true,
+					data: {
+						title: '自定义内容',
+						content: customContent.trim()
+					}
+				}
+			}
+			
+			const contentList = mockData[type] || mockData.idiom
+			const today = new Date()
+			const dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000)
+			const index = dayOfYear % contentList.length
+			
+			return {
+				success: true,
+				data: contentList[index]
+			}
+		}
+		
+		try {
+			await this.initCloudObject()
+			return this.feishutools.getScrollContent({
+				type: type,
+				customContent: customContent
+			})
+		} catch (error) {
+			console.error('[FeishuRequest] 获取滚动字幕内容失败，使用mock数据:', error.message)
+			const mockData = {
+				idiom: [
+					{ title: '成语故事', content: '一鸣惊人：比喻平时没有突出的表现，一下子做出惊人的成绩。' },
+					{ title: '成语故事', content: '画蛇添足：比喻做了多余的事，非但无益，反而不合适。' },
+					{ title: '成语故事', content: '亡羊补牢：比喻出了问题以后想办法补救，可以防止继续受损失。' }
+				]
+			}
+			const contentList = mockData[type] || mockData.idiom
+			const today = new Date()
+			const dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000)
+			const index = dayOfYear % contentList.length
+			
+			return {
+				success: true,
+				data: contentList[index]
+			}
+		}
+	}
 }
 
 export const feishuRequest = new FeishuRequest()

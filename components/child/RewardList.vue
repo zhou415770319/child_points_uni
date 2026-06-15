@@ -10,12 +10,14 @@
 					<text class="reward-desc">{{ reward.description }}</text>
 				</view>
 				<view class="reward-right">
-					<text class="reward-price">{{ reward.price }}积分</text>
-					<view class="reward-status" :class="reward.status">{{ reward.status }}</view>
+				<view class="reward-price-row">
+					<text class="reward-price points">{{ reward.price || reward.base_points || 0 }} 积分</text>
+					<text class="reward-price coins">{{ (reward.coins || reward.reward_points || 0).toFixed(1) }} 金币</text>
 				</view>
+				<view class="reward-status" :class="reward.status">{{ reward.status }}</view>
+			</view>
 			</view>
 		</view>
-		<button class="go-mall-btn" @click="goToMall">去商城兑换</button>
 	</view>
 </template>
 
@@ -26,11 +28,6 @@
 			rewards: {
 				type: Array,
 				default: () => []
-			}
-		},
-		methods: {
-			goToMall() {
-				this.$emit('goToMall')
 			}
 		}
 	}
@@ -109,10 +106,23 @@
 		gap: 10rpx;
 	}
 
+	.reward-price-row {
+		display: flex;
+		flex-direction: column;
+		gap: 5rpx;
+	}
+
 	.reward-price {
 		font-size: 26rpx;
 		font-weight: bold;
-		color: #ff6b6b;
+
+		&.points {
+			color: #ff6b6b;
+		}
+
+		&.coins {
+			color: #ffd700;
+		}
 	}
 
 	.reward-status {
@@ -134,17 +144,5 @@
 			background-color: #e6f7ff;
 			color: #1890ff;
 		}
-	}
-
-	.go-mall-btn {
-		width: 100%;
-		margin-top: 20rpx;
-		padding: 25rpx;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		color: #fff;
-		font-size: 30rpx;
-		font-weight: bold;
-		border-radius: 16rpx;
-		border: none;
 	}
 </style>

@@ -377,15 +377,12 @@
 					const parent = await UserManager.getCurrentParent()
 					const parentAccount = parent?.phone || ''
 					
-					// 处理头像上传
+					// 处理头像上传（选择图片时已经获取到 fileToken）
 					let avatarFileToken = ''
 					let avatarUrl = ''
-					if (this.avatarFiles.length > 0 && this.$refs.avatarUploaderRef) {
-						// 用户选择了新头像，上传获取 file_token
-						const uploadResult = await this.$refs.avatarUploaderRef.uploadAndGetFieldValue()
-						if (uploadResult && uploadResult.value && uploadResult.value.length > 0) {
-							avatarFileToken = uploadResult.value[0].file_token || ''
-						}
+					if (this.avatarFiles.length > 0) {
+						// 用户选择了新头像，直接从 avatarFiles 获取 fileToken
+						avatarFileToken = this.avatarFiles[0].fileToken || ''
 					} else if (this.editingChild && this.avatarExisting.length > 0) {
 						// 编辑模式且未更换头像，保留原 file_token
 						avatarFileToken = this.avatarExisting[0].fileToken || ''
@@ -402,9 +399,9 @@
 						parent_account: parentAccount
 					}
 					
-					// 有头像 file_token 则添加到数据中
+					// 有头像 file_token 则添加到数据中（飞书附件字段格式：对象数组）
 					if (avatarFileToken) {
-						childData.avatar = avatarFileToken
+						childData.avatar = [{ file_token: avatarFileToken }]
 					}
 
 					if (this.editingChild) {

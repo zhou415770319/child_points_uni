@@ -40,6 +40,11 @@
 				<text class="menu-title">AI配置</text>
 				<text class="menu-desc">配置Coze工作流</text>
 			</view>
+			<view class="menu-item" @click="showScrollConfig">
+				<view class="menu-icon">📢</view>
+				<text class="menu-title">滚动字幕</text>
+				<text class="menu-desc">配置首页滚动字幕</text>
+			</view>
 			<view class="menu-item" @click="navigateTo('/pages/parent/goods-manage')">
 				<view class="menu-icon">🛒</view>
 				<text class="menu-title">商城管理</text>
@@ -141,6 +146,61 @@
 			</view>
 		</view>
 
+		<view class="modal-overlay" v-if="showScrollModal" @click="closeScrollModal">
+			<view class="modal-content scroll-modal" @click.stop>
+				<view class="modal-header">
+					<text class="modal-title">📢 滚动字幕配置</text>
+					<text class="modal-close" @click="closeScrollModal">✕</text>
+				</view>
+				<view class="modal-body">
+					<view class="form-item">
+						<view class="switch-row">
+							<text class="form-label">开启滚动字幕</text>
+							<switch :checked="scrollConfig.enabled" @change="onScrollEnabledChange" color="#667eea" />
+						</view>
+					</view>
+					
+					<view class="form-item" v-if="scrollConfig.enabled">
+						<text class="form-label">显示类型（可多选）</text>
+						<view class="type-tags">
+							<view 
+								v-for="(type, index) in scrollTypes.slice(0, -1)" 
+								:key="index"
+								class="type-tag"
+								:class="{ active: scrollConfig.types?.includes(getTypeKey(index)) }"
+								@click="toggleScrollType(index)"
+							>
+								{{ type }}
+							</view>
+						</view>
+						<view class="custom-toggle" v-if="!scrollConfig.types?.includes('custom')">
+							<view 
+								class="type-tag"
+								:class="{ active: scrollConfig.types?.includes('custom') }"
+								@click="toggleScrollType(5)"
+							>
+								自定义
+							</view>
+						</view>
+					</view>
+					
+					<view class="form-item" v-if="scrollConfig.enabled && scrollConfig.type === 'custom'">
+						<text class="form-label">自定义内容</text>
+						<textarea class="form-textarea" v-model="scrollConfig.customContent" placeholder="请输入自定义滚动字幕内容" />
+					</view>
+					
+					<view class="config-tip" v-if="scrollConfig.enabled">
+						<text class="tip-icon">💡</text>
+						<text class="tip-text">开启后，儿童端首页将显示滚动字幕，展示{{ scrollTypes[scrollTypeIndex] }}内容</text>
+					</view>
+				</view>
+				<view class="modal-footer">
+					<button class="btn btn-secondary" @click="closeScrollModal">取消</button>
+					<button class="btn btn-primary" @click="saveScrollConfig">保存</button>
+				</view>
+			</view>
+		</view>
+
 		<custom-tab-bar ref="tabBar"></custom-tab-bar>
 	</view>
 </template>
@@ -163,6 +223,16 @@
 				cozeConfig: {
 					workflowUrl: '',
 					apiKey: ''
+				},
+				// 滚动字幕配置
+				showScrollModal: false,
+				scrollTypes: ['每日成语故事', '每日英语短句', '科技知识', '文学常识', '脑筋急转弯', '自定义'],
+				scrollTypeIndex: 0,
+				scrollConfig: {
+					enabled: false,
+					type: 'idiom',
+					types: ['idiom'],
+					customContent: ''
 				}
 			}
 		},
@@ -297,6 +367,52 @@
 			},
 			exportTasks() {
 				uni.showToast({ title: '导出功能开发中', icon: 'none' })
+			},
+			// 滚动字幕配置相关
+			getTypeKey(index) {
+				const typeMap = ['idiom', 'english', 'technology', 'literature', 'riddle', 'custom']
+				return typeMap[index]
+			},
+			showScrollConfig() {
+				// 从缓存读取配置
+				const savedConfig = uni.getStorageSync('scrollConfig')
+				if (savedConfig) {
+					this.scrollConfig = JSON.parse(savedConfig)
+				}
+				// 确保 types 数组存在
+				if (!this.scrollConfig.types || !Array.isArray(this.scrollConfig.types)) {
+					this.scrollConfig.types = [this.scrollConfig.type || 'idiom']
+				}
+				this.showScrollModal = true
+			},
+			closeScrollModal() {
+				this.showScrollModal = false
+			},
+			onScrollEnabledChange(e) {
+				this.scrollConfig.enabled = e.detail.value
+			},
+			toggleScrollType(index) {
+				const typeKey = this.getTypeKey(index)
+				if (!this.scrollConfig.types) {
+					this.scrollConfig.types = []
+				}
+				const idx = this.scrollConfig.types.indexOf(typeKey)
+				if (idx > -1) {
+					// 至少保留一个选项
+					if (this.scrollConfig.types.length > 1) {
+						this.scrollConfig.types.splice(idx, 1)
+					}
+				} else {
+					this.scrollConfig.types.push(typeKey)
+				}
+				// 保持 type 字段兼容旧版本
+				this.scrollConfig.type = this.scrollConfig.types[0] || 'idiom'
+			},
+			saveScrollConfig() {
+				// 保存到本地缓存
+				uni.setStorageSync('scrollConfig', JSON.stringify(this.scrollConfig))
+				uni.showToast({ title: '配置保存成功', icon: 'success' })
+				this.closeScrollModal()
 			}
 		}
 	}
@@ -427,7 +543,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		z-index: 1000;
+		z-index: 10000;
 		padding: 40rpx;
 	}
 
@@ -534,5 +650,52 @@
 			background-color: #f0f0f0;
 			color: #333;
 		}
+	}
+
+	.scroll-modal {
+		max-width: 680rpx;
+	}
+
+	.switch-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 10rpx 0;
+	}
+
+	.form-textarea {
+		width: 100%;
+		height: 160rpx;
+		padding: 20rpx;
+		border: 2rpx solid #e8e8e8;
+		border-radius: 10rpx;
+		font-size: 28rpx;
+		box-sizing: border-box;
+	}
+
+	.type-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 15rpx;
+	}
+
+	.type-tag {
+		padding: 15rpx 25rpx;
+		background-color: #f5f5f5;
+		border-radius: 25rpx;
+		font-size: 26rpx;
+		color: #666;
+		border: 2rpx solid #e8e8e8;
+		transition: all 0.3s;
+
+		&.active {
+			background-color: #667eea;
+			color: #fff;
+			border-color: #667eea;
+		}
+	}
+
+	.custom-toggle {
+		margin-top: 15rpx;
 	}
 </style>

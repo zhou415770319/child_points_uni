@@ -75,7 +75,8 @@
 			</view>
 			<view class="reward-list">
 				<view class="reward-item" v-for="reward in recentRewards" :key="reward.id">
-					<view class="reward-icon">{{ reward.icon }}</view>
+					<image v-if="reward.gift_image" class="reward-image" :src="reward.gift_image" mode="aspectFill" />
+					<view v-else class="reward-icon">{{ reward.icon }}</view>
 					<view class="reward-info">
 						<text class="reward-name">{{ reward.name }}</text>
 						<text class="reward-detail">{{ reward.price }}积分 · {{ reward.status }}</text>
@@ -243,41 +244,95 @@
 				try {
 					const result = await feishuRequest.queryRecords('任务表', { child_id: this.childId })
 					if (result.success && result.data && result.data.length > 0) {
-						this.recentTasks = result.data.slice(0, 5).map(item => {
+						// 按创建时间倒序排序
+						const sortedTasks = result.data.sort((a, b) => 
+							new Date(b.fields.created_time || b.fields.created_at || 0) - new Date(a.fields.created_time || a.fields.created_at || 0)
+						)
+						
+						this.recentTasks = sortedTasks.slice(0, 5).map(item => {
 							const title = item.fields.title 
 								? (Array.isArray(item.fields.title) && item.fields.title[0] && item.fields.title[0].text 
 									? item.fields.title[0].text 
 									: item.fields.title)
 								: ''
+							
+							// 使用 created_time 或 created_at
+							const timeField = item.fields.created_time || item.fields.created_at || item.fields.start_time
+							
 							return {
 								id: item.record_id,
 								title: title,
 								type: item.fields.type || '',
 								status: item.fields.status === '已完成' ? 'completed' : (item.fields.status === '进行中' ? 'active' : 'pending'),
-								time: this.formatTime(item.fields.created_at)
+								time: this.formatTime(timeField)
 							}
 						})
 					}
 				} catch (error) {
 					console.error('[Child Detail] 加载任务失败:', error)
-					this.recentTasks = [
-						{ id: 1, title: '语文阅读30分钟', type: 'reading', status: 'completed', time: '今天 14:30' },
-						{ id: 2, title: '数学练习10题', type: 'math', status: 'completed', time: '今天 15:00' },
-						{ id: 3, title: '英语单词背诵', type: 'english', status: 'pending', time: '待完成' }
-					]
+					this.recentTasks = []
 				}
 			},
 			async loadRecentRewards() {
 				try {
 					const result = await feishuRequest.queryRecords('兑换记录表', { child_id: this.childId })
 					if (result.success && result.data && result.data.length > 0) {
-						this.recentRewards = result.data.slice(0, 3).map(item => ({
-							id: item.record_id,
-							name: item.fields.gift_name ? (Array.isArray(item.fields.gift_name) && item.fields.gift_name[0] && item.fields.gift_name[0].text ? item.fields.gift_name[0].text : item.fields.gift_name) : '未知礼品',
-							price: item.fields.points || 0,
-							status: item.fields.status || '待处理',
-							icon: this.getRewardIcon(item.fields.category)
-						}))
+						// 提取所有图片的 file_token
+						const fileTokens = []
+						result.data.forEach(item => {
+							if (item.fields.gift_image && item.fields.gift_image.type === 17 && 
+								item.fields.gift_image.value && item.fields.gift_image.value.length > 0) {
+								item.fields.gift_image.value.forEach(img => {
+									if (img.file_token) {
+										fileTokens.push(img.file_token)
+									}
+								})
+							}
+						})
+						
+						// 批量获取图片URL
+						let imageUrlMap = {}
+						if (fileTokens.length > 0) {
+							await feishuRequest.initCloudObject()
+							const urlResult = await feishuRequest.feishutools.getImageUrls({
+								fileTokens: fileTokens
+							})
+							if (urlResult.success && urlResult.urlMap) {
+								imageUrlMap = urlResult.urlMap
+							}
+						}
+						
+						this.recentRewards = result.data.slice(0, 3).map(item => {
+							// 解析礼品名称
+							let giftName = '未知礼品'
+							if (item.fields.gift_name) {
+								if (typeof item.fields.gift_name === 'object' && item.fields.gift_name.value && 
+									Array.isArray(item.fields.gift_name.value) && item.fields.gift_name.value[0]) {
+									giftName = item.fields.gift_name.value[0].text || '未知礼品'
+								} else if (Array.isArray(item.fields.gift_name) && item.fields.gift_name[0] && item.fields.gift_name[0].text) {
+									giftName = item.fields.gift_name[0].text
+								} else if (typeof item.fields.gift_name === 'string') {
+									giftName = item.fields.gift_name
+								}
+							}
+							
+							// 解析礼品图片
+							let giftImageUrl = ''
+							if (item.fields.gift_image && item.fields.gift_image.type === 17 && 
+								item.fields.gift_image.value && item.fields.gift_image.value.length > 0) {
+								const imageData = item.fields.gift_image.value[0]
+								giftImageUrl = imageUrlMap[imageData.file_token] || imageData.tmp_download_url || ''
+							}
+							
+							return {
+								id: item.record_id,
+								name: giftName,
+								price: item.fields.points || 0,
+								status: item.fields.status || '待处理',
+								icon: this.getRewardIcon(item.fields.category),
+								gift_image: giftImageUrl
+							}
+						})
 					}
 				} catch (error) {
 					console.error('[Child Detail] 加载奖励失败:', error)
@@ -351,8 +406,35 @@
 			},
 			formatTime(dateStr) {
 				if (!dateStr) return '未知时间'
-				const date = new Date(dateStr)
-				return `${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+				
+				// 处理时间戳（毫秒）
+				let date
+				if (typeof dateStr === 'number') {
+					date = new Date(dateStr)
+				} else {
+					date = new Date(dateStr)
+				}
+				
+				// 检查日期是否有效
+				if (isNaN(date.getTime())) {
+					return '未知时间'
+				}
+				
+				const now = new Date()
+				const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+				const taskDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+				
+				const diffDays = Math.floor((today - taskDate) / (1000 * 60 * 60 * 24))
+				
+				const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+				
+				if (diffDays === 0) {
+					return '今天 ' + timeStr
+				} else if (diffDays === 1) {
+					return '昨天 ' + timeStr
+				} else {
+					return `${date.getMonth() + 1}月${date.getDate()}日 ${timeStr}`
+				}
 			}
 		}
 	}
@@ -596,6 +678,14 @@
 		padding: 20rpx;
 		background-color: #fafafa;
 		border-radius: 12rpx;
+	}
+
+	.reward-image {
+		width: 80rpx;
+		height: 80rpx;
+		border-radius: 8rpx;
+		margin-right: 20rpx;
+		background-color: #f0f0f0;
 	}
 
 	.reward-icon {

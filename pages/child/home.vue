@@ -5,10 +5,24 @@
 			:currentChild="currentChild"
 			:currentDate="currentDate"
 			:totalPoints="totalPoints"
+			:totalCoins="totalCoins"
 			@goToProfile="goToProfile"
 			@showChildSwitch="showChildSwitch"
 			@goToPointsHistory="goToPointsHistory"
 		/>
+
+		<!-- 滚动字幕 -->
+		<view v-if="showScrollText && scrollContent" class="scroll-text-container">
+			<view class="scroll-text-wrapper">
+				<view class="scroll-text-content">
+					<text class="scroll-title">{{ scrollContent.title }}：</text>
+					<text class="scroll-text">{{ scrollContent.content }}</text>
+				</view>
+			</view>
+			<view class="play-button" :class="{ playing: isPlaying }" @click="playScrollText">
+				<text class="play-icon">{{ isPlaying ? '⏸️' : '🔊' }}</text>
+			</view>
+		</view>
 
 		<!-- 连续打卡组件 -->
 		<StreakCard 
@@ -45,7 +59,6 @@
 		<!-- 奖励列表 -->
 		<RewardList 
 			:rewards="rewards"
-			@goToMall="goToMall"
 		/>
 
 		<!-- 教材学习 -->
@@ -122,10 +135,21 @@
 				rewards: [],
 				learningBooks: [],
 				totalPoints: 0,
+				totalCoins: 0,
 				timers: {},
 				// 提交任务弹框相关
 				showSubmitModal: false,
-				currentSubmitTask: null
+				currentSubmitTask: null,
+				// 滚动字幕相关
+				showScrollText: false,
+				scrollContent: null,
+				scrollConfig: {
+					enabled: false,
+					type: 'idiom',
+					types: ['idiom'],
+					customContent: ''
+				},
+				isPlaying: false
 			}
 		},
 		computed: {
@@ -145,6 +169,9 @@
 			
 			// 批量加载首页数据（只调用一次云函数）
 			await this.loadHomeData()
+			
+			// 加载滚动字幕配置和内容
+			await this.loadScrollText()
 			
 			// 监听任务详情页返回后的刷新事件
 			uni.$on('refreshTasks', async () => {
@@ -219,7 +246,7 @@
 								}
 								
 								return {
-									id: item.fields.id || '', // 使用用户自定义的任务ID（fields.id）
+									task_id: item.fields.task_id || '', // 使用用户自定义的任务ID（fields.task_id）
 									record_id: item.record_id, // 飞书系统的record_id（用于更新记录）
 									title: title,
 									description: description,
@@ -227,6 +254,7 @@
 									type_text: item.fields.type_text || '',
 									difficulty: item.fields.difficulty || '简单',
 									base_points: item.fields.base_points || 10,
+									reward_points: item.fields.reward_points || 0,
 									child_id: String(childIdValue).trim(), // 确保是字符串格式
 									status: item.fields.status || '未开始',
 									completed: item.fields.status === '已完成',
@@ -247,13 +275,15 @@
 								const title = this.parseTextField(item.fields.title)
 								const description = this.parseTextField(item.fields.description)
 								return {
-									id: item.record_id,
+									task_id: item.fields.task_id || '', // 使用用户自定义的任务ID（fields.task_id）
+									record_id: item.record_id, // 飞书系统的record_id（用于更新记录）
 									title: title,
 									description: description,
 									type: item.fields.type || '',
 									type_text: item.fields.type_text || '',
 									difficulty: item.fields.difficulty || '简单',
 									base_points: item.fields.base_points || 10,
+									reward_points: item.fields.reward_points || 0,
 									child_id: item.fields.child_id || '',
 									status: item.fields.status || '未开始',
 									completed: item.fields.status === '已完成',
@@ -283,7 +313,9 @@
 										id: item.record_id,
 										name: this.parseTextField(item.fields.gift_name) || '未知礼品',
 										description: this.parseTextField(item.fields.description) || '',
-										price: item.fields.points || 0,
+										price: item.fields.points || item.fields.base_points || 0,
+										base_points: item.fields.base_points || item.fields.points || 0,
+										reward_points: item.fields.reward_points || item.fields.coins || 0,
 										status: item.fields.status || '待处理',
 										icon: this.getRewardIcon(item.fields.category),
 										gift_image: giftImageUrl
@@ -357,12 +389,13 @@
 			},
 			
 			/**
-			 * 加载儿童积分
+			 * 加载儿童积分和金币
 			 */
 			async loadChildPoints() {
 				try {
 					if (this.currentChild && this.currentChild.id) {
 						this.totalPoints = this.currentChild.total_points || 0
+						this.totalCoins = this.currentChild.total_reward_points|| 0
 					}
 				} catch (error) {
 					console.error('[Child Home] 加载积分失败:', error)
@@ -447,19 +480,15 @@
 				try {
 					uni.showLoading({ title: '启动中...' })
 					
-					const childId = this.currentChild.child_id || this.currentChild.id
-					const result = await feishuRequest.updateRecord('任务表', task.id, {
-						status: '进行中',
-						child_id: childId,
-						start_time: Date.now(),
-						elapsed_time: 0
+					// 使用 record_id 更新飞书记录（只更新状态）
+					const result = await feishuRequest.updateRecord('任务表', task.record_id, {
+						status: '进行中'
 					})
 					
 					if (result.success) {
 						task.status = '进行中'
-						task.child_id = childId
+						task.elapsed_time = task.elapsed_time || 0  // 保留原有的累计时间
 						task.start_time = Date.now()
-						task.elapsed_time = 0
 						this.startTimer(task)
 						uni.showToast({ title: '任务已开始', icon: 'success' })
 					} else {
@@ -480,11 +509,11 @@
 			async pauseTask(task) {
 				try {
 					uni.showLoading({ title: '暂停中...' })
-					this.stopTimer(task)
-					
-					const result = await feishuRequest.updateRecord('任务表', task.id, {
-						status: '暂停'
-					})
+				this.stopTimer(task)
+				
+				const result = await feishuRequest.updateRecord('任务表', task.record_id, {
+					status: '暂停'
+				})
 					
 					if (result.success) {
 						task.status = '暂停'
@@ -508,7 +537,7 @@
 				try {
 					uni.showLoading({ title: '继续中...' })
 					
-					const result = await feishuRequest.updateRecord('任务表', task.id, {
+					const result = await feishuRequest.updateRecord('任务表', task.record_id, {
 						status: '进行中'
 					})
 					
@@ -548,7 +577,7 @@
 					}
 					
 					// 不需要审核，直接完成
-					const result = await feishuRequest.updateRecord('任务表', task.id, {
+					const result = await feishuRequest.updateRecord('任务表', task.record_id, {
 						status: '已完成'
 					})
 					
@@ -581,17 +610,37 @@
 						elapsed_time: task.elapsed_time || 0
 					}
 					
-					const result = await feishuRequest.updateRecord('任务表', task.id, updateData)
+					// 1. 更新任务状态
+					const result = await feishuRequest.updateRecord('任务表', task.record_id, updateData)
 					
-					if (result.success) {
-						task.status = '待审核'
-						task.completed = true
-						uni.showToast({ title: '提交成功，等待审核', icon: 'success' })
-						this.showSubmitModal = false
-						this.currentSubmitTask = null
-					} else {
+					if (!result.success) {
 						uni.showToast({ title: '提交失败', icon: 'none' })
+						uni.hideLoading()
+						return
 					}
+					
+					// 2. 创建打卡记录
+					const childId = this.currentChild.child_id || this.currentChild.id
+					const checkinResult = await feishuRequest.createCheckinRecord({
+						task: task,
+						childId: childId,
+						remark: remark,
+						uploadedFiles: files || []
+					})
+					
+					if (!checkinResult.success) {
+						console.error('[Child Home] 创建打卡记录失败:', checkinResult.message)
+						uni.showToast({ title: '任务已提交，但记录创建失败', icon: 'none' })
+						uni.hideLoading()
+						return
+					}
+					
+					// 3. 更新本地状态
+					task.status = '待审核'
+					task.completed = true
+					uni.showToast({ title: '提交成功，等待审核', icon: 'success' })
+					this.showSubmitModal = false
+					this.currentSubmitTask = null
 					
 					uni.hideLoading()
 				} catch (error) {
@@ -609,14 +658,16 @@
 					uni.showLoading({ title: '认领中...' })
 					
 					const childId = this.currentChild.child_id || this.currentChild.id
-					const result = await feishuRequest.updateRecord('任务表', task.id, {
+					const todayTimestamp = new Date().setHours(0, 0, 0, 0)
+					const result = await feishuRequest.updateRecord('任务表', task.record_id, {
 						child_id: childId,
-						status: '未开始'
+						status: '未开始',
+						start_time: todayTimestamp
 					})
 					
 					if (result.success) {
 						// 将任务从otherTasks移到todayTasks
-						const index = this.otherTasks.findIndex(t => t.id === task.id)
+						const index = this.otherTasks.findIndex(t => t.record_id === task.record_id)
 						if (index > -1) {
 							this.otherTasks.splice(index, 1)
 						}
@@ -640,11 +691,12 @@
 			 * 启动计时器
 			 */
 			startTimer(task) {
-				if (this.timers[task.id]) {
-					clearInterval(this.timers[task.id])
+				const timerKey = task.record_id
+				if (this.timers[timerKey]) {
+					clearInterval(this.timers[timerKey])
 				}
 				
-				this.timers[task.id] = setInterval(() => {
+				this.timers[timerKey] = setInterval(() => {
 					task.elapsed_time = (task.elapsed_time || 0) + 1
 				}, 1000)
 			},
@@ -653,9 +705,10 @@
 			 * 停止计时器
 			 */
 			stopTimer(task) {
-				if (this.timers[task.id]) {
-					clearInterval(this.timers[task.id])
-					delete this.timers[task.id]
+				const timerKey = task.record_id
+				if (this.timers[timerKey]) {
+					clearInterval(this.timers[timerKey])
+					delete this.timers[timerKey]
 				}
 			},
 			
@@ -730,18 +783,11 @@
 			 */
 			goToTaskDetail(task) {
 				console.log('[Home] 点击任务，跳转详情页:', task)
-				console.log('[Home] 任务ID:', task.id, 'record_id:', task.record_id, 'child_id:', task.child_id)
+				console.log('[Home] 任务ID:', task.task_id, 'record_id:', task.record_id, 'child_id:', task.child_id)
 				
 				// 将任务信息序列化为JSON字符串传递
 				const taskData = encodeURIComponent(JSON.stringify(task))
 				uni.navigateTo({ url: `/pages/child/task-detail?task=${taskData}` })
-			},
-			
-			/**
-			 * 跳转到商城
-			 */
-			goToMall() {
-				uni.navigateTo({ url: '/pages/child/mall' })
 			},
 			
 			/**
@@ -756,6 +802,101 @@
 			 */
 			goToTests() {
 				uni.navigateTo({ url: '/pages/child/tests' })
+			},
+			
+			/**
+			 * 加载滚动字幕配置和内容
+			 */
+			async loadScrollText() {
+				try {
+					// 从缓存读取家长端配置
+					const savedConfig = uni.getStorageSync('scrollConfig')
+					if (savedConfig) {
+						this.scrollConfig = JSON.parse(savedConfig)
+					}
+					
+					// 确保 types 数组存在，兼容旧版本
+					if (!this.scrollConfig.types || !Array.isArray(this.scrollConfig.types)) {
+						this.scrollConfig.types = [this.scrollConfig.type || 'idiom']
+					}
+					
+					// 如果配置开启了滚动字幕
+					if (this.scrollConfig.enabled) {
+						this.showScrollText = true
+						
+						// 从云函数获取滚动字幕内容（支持多选类型）
+						const result = await feishuRequest.getScrollContent({
+							types: this.scrollConfig.types,
+							type: this.scrollConfig.type,
+							customContent: this.scrollConfig.customContent
+						})
+						
+						if (result.success && result.data) {
+							this.scrollContent = result.data
+						}
+					} else {
+						this.showScrollText = false
+						this.scrollContent = null
+					}
+				} catch (error) {
+					console.error('[Child Home] 加载滚动字幕失败:', error)
+					this.showScrollText = false
+				}
+			},
+			
+			/**
+			 * 播放滚动字幕语音
+			 */
+			async playScrollText() {
+				if (!this.scrollContent) return
+				
+				try {
+					this.isPlaying = true
+					
+					const text = `${this.scrollContent.title}，${this.scrollContent.content}`
+					
+					// #ifdef APP-PLUS || H5
+					// 使用 Web Speech API 播放语音
+					if ('speechSynthesis' in window) {
+						// 如果正在播放，先停止
+						window.speechSynthesis.cancel()
+						
+						const utterance = new SpeechSynthesisUtterance(text)
+						utterance.lang = 'zh-CN'
+						utterance.rate = 0.9
+						utterance.pitch = 1
+						
+						utterance.onend = () => {
+							this.isPlaying = false
+						}
+						
+						utterance.onerror = () => {
+							this.isPlaying = false
+							uni.showToast({ title: '播放失败', icon: 'none' })
+						}
+						
+						window.speechSynthesis.speak(utterance)
+					} else {
+						// 不支持 Web Speech API
+						this.isPlaying = false
+						uni.showToast({ title: '当前环境不支持语音播放', icon: 'none' })
+					}
+					// #endif
+					
+					// #ifdef MP-WEIXIN
+					// 使用微信小程序内置语音合成
+					uni.showToast({ title: '开始播放', icon: 'none', duration: 1000 })
+					// 模拟播放完成
+					setTimeout(() => {
+						this.isPlaying = false
+					}, text.length * 300)
+					// #endif
+					
+				} catch (error) {
+					console.error('[Child Home] 播放语音失败:', error)
+					this.isPlaying = false
+					uni.showToast({ title: '播放失败', icon: 'none' })
+				}
 			}
 		}
 	}
@@ -766,5 +907,85 @@
 		min-height: 100vh;
 		background-color: #f5f5f5;
 		padding-bottom: 120rpx;
+	}
+
+	.scroll-text-container {
+		margin: 16rpx 24rpx;
+		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		border-radius: 12rpx;
+		padding: 16rpx 24rpx;
+		overflow: hidden;
+		box-shadow: 0 4rpx 16rpx rgba(102, 126, 234, 0.3);
+		display: flex;
+		align-items: center;
+		position: relative;
+	}
+
+	.scroll-text-wrapper {
+		flex: 1;
+		overflow: hidden;
+	}
+
+	.scroll-text-content {
+		display: inline-flex;
+		white-space: nowrap;
+		animation: scroll 20s linear infinite;
+	}
+
+	@keyframes scroll {
+		0% {
+			transform: translateX(100%);
+		}
+		100% {
+			transform: translateX(-100%);
+		}
+	}
+
+	.scroll-title {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.9);
+		font-weight: 600;
+		margin-right: 8rpx;
+	}
+
+	.scroll-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.95);
+	}
+
+	.play-button {
+		width: 60rpx;
+		height: 60rpx;
+		background-color: rgba(255, 255, 255, 0.2);
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-left: 16rpx;
+		flex-shrink: 0;
+		transition: all 0.3s ease;
+
+		&:active {
+			transform: scale(0.95);
+			background-color: rgba(255, 255, 255, 0.3);
+		}
+
+		&.playing {
+			background-color: rgba(255, 215, 0, 0.4);
+			animation: pulse 1s ease-in-out infinite;
+		}
+	}
+
+	.play-icon {
+		font-size: 28rpx;
+	}
+
+	@keyframes pulse {
+		0%, 100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.6;
+		}
 	}
 </style>

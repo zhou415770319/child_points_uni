@@ -98,20 +98,23 @@
 									console.log('[ImageUploader] 获取 objToken 成功:', objToken)
 								} else {
 									console.error('[ImageUploader] 获取 objToken 失败:', nodeResult.message || '未知错误')
-									return null
+									return
 								}
 							} catch (error) {
 								console.error('[ImageUploader] 获取 objToken 异常:', error.message)
-								return null
+								return
 							}
 						}
-						debugger
+						
 						const fileTokens = []
 						let successCount = 0
-						const newFiles = res.tempFiles.map(async(file) => {
+						// 使用 Promise.all 等待所有上传完成
+						const newFiles = await Promise.all(res.tempFiles.map(async(file) => {
+							let fileToken = null
 							try {
 								const result = await feishuRequest.uploadFile(file.path, objToken)
 								if (result.success && result.fileToken) {
+									fileToken = result.fileToken
 									fileTokens.push({ file_token: result.fileToken })
 									successCount++
 									console.log('[ImageUploader] 图片上传成功，fileToken:', result.fileToken)
@@ -121,12 +124,12 @@
 							} catch (error) {
 								console.error('[ImageUploader] 图片上传异常:', error.message)
 							}
-							return ({
+							return {
 								path: file.path,
-								size: file.size
-								
-							})
-						})
+								size: file.size,
+								fileToken: fileToken
+							}
+						}))
 						// 更新本地列表并触发 v-model 更新
 						this.localFiles = [...this.localFiles, ...newFiles]
 						console.log('[ImageUploader] localFiles 更新后:', this.localFiles)
@@ -165,7 +168,7 @@
 			 * 预览新选择的图片
 			 */
 			previewFile(index) {
-				const urls = this.files.map(f => f.path)
+				const urls = this.localFiles.map(f => f.path)
 				uni.previewImage({
 					current: urls[index],
 					urls
