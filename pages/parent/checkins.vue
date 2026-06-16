@@ -63,11 +63,32 @@
 						<view class="detailed-item" v-for="(item, key) in this.parseAiDetailed(checkin.ai_detailed)" :key="key">
 							<view class="item-header">
 								<text class="item-question">{{ key }}</text>
-								<text class="item-status" :class="item.correctness === '正确' ? 'correct' : 'wrong'">
-									{{ item.correctness === '正确' ? '✓ 正确' : '✗ 错误' }}
+								<text class="item-status" :class="this.getCorrectnessClass(item.correctness)">
+									{{ this.getCorrectnessText(item.correctness) }}
 								</text>
 							</view>
-							<text class="item-feedback">{{ item.feedback }}</text>
+							
+							<!-- 优点列表 -->
+							<view class="item-section strengths" v-if="item.strengths && item.strengths.length > 0">
+								<text class="section-label">🌟 优点</text>
+								<view class="list-container">
+									<text class="list-item" v-for="(strength, index) in item.strengths" :key="index">• {{ strength }}</text>
+								</view>
+							</view>
+							
+							<!-- 需要改进的地方 -->
+							<view class="item-section improvements" v-if="item.improvements && item.improvements.length > 0">
+								<text class="section-label">💡 需要改进</text>
+								<view class="list-container">
+									<text class="list-item" v-for="(improvement, index) in item.improvements" :key="index">• {{ improvement }}</text>
+								</view>
+							</view>
+							
+							<!-- 鼓励话语 -->
+							<view class="item-section encouragement" v-if="item.encouragement && item.encouragement.trim()">
+								<text class="section-label">💝 鼓励</text>
+								<text class="encouragement-text">{{ item.encouragement }}</text>
+							</view>
 						</view>
 					</view>
 				</view>
@@ -331,22 +352,118 @@
 				}
 				return ''
 			},
+			
+			/**
+			 * 获取正确性状态样式类
+			 */
+			getCorrectnessClass(correctness) {
+				if (!correctness) return ''
+				switch (correctness) {
+					case '正确':
+						return 'correct'
+					case '部分正确':
+						return 'partial'
+					case '错误':
+						return 'wrong'
+					default:
+						return ''
+				}
+			},
+			
+			/**
+			 * 获取正确性状态文本
+			 */
+			getCorrectnessText(correctness) {
+				if (!correctness) return ''
+				switch (correctness) {
+					case '正确':
+						return '✓ 正确'
+					case '部分正确':
+						return '~ 部分正确'
+					case '错误':
+						return '✗ 错误'
+					default:
+						return correctness
+				}
+			},
+			
 			/**
 			 * 解析AI评价详情JSON
 			 */
 			parseAiDetailed(detailedStr) {
 				if (!detailedStr) return null
+				
 				try {
-					const parsed = JSON.parse(detailedStr)
-					// 验证是否是预期的格式
+					// 预处理：移除可能导致解析失败的字符
+					let cleanedStr = detailedStr
+					
+					// 移除首尾空白字符
+					cleanedStr = cleanedStr.trim()
+					
+					// 如果字符串本身就是被引号包裹的（说明是JSON字符串），先尝试去掉外层引号
+					if ((cleanedStr.startsWith('"') && cleanedStr.endsWith('"')) || 
+						(cleanedStr.startsWith("'") && cleanedStr.endsWith("'"))) {
+						cleanedStr = cleanedStr.slice(1, -1)
+					}
+					
+					// 移除多余的换行符和制表符
+					cleanedStr = cleanedStr.replace(/[\r\n\t]+/g, '')
+					
+					// 处理转义的引号：将 \" 转换回 "
+					cleanedStr = cleanedStr.replace(/\\"/g, '"')
+					
+					// 处理可能的单引号问题：将未转义的单引号替换为双引号（仅在非字符串内部的单引号）
+					cleanedStr = cleanedStr.replace(/'(?=([^"]*"[^"]*")*[^"]*$)/g, '"')
+					
+					// 检查是否缺少闭合括号并尝试修复
+					cleanedStr = this.fixIncompleteJson(cleanedStr)
+					
+					// 尝试解析
+					const parsed = JSON.parse(cleanedStr)
 					if (typeof parsed === 'object' && parsed !== null) {
 						return parsed
 					}
 					return null
 				} catch (error) {
 					console.error('[Checkins] 解析AI评价详情失败:', error)
+					console.error('[Checkins] 原始字符串长度:', detailedStr.length)
+					console.error('[Checkins] 原始字符串内容:', detailedStr)
 					return null
 				}
+			},
+			
+			/**
+			 * 修复不完整的JSON字符串
+			 */
+			fixIncompleteJson(jsonStr) {
+				if (!jsonStr) return jsonStr
+				
+				// 统计花括号
+				let openBrace = 0
+				let closeBrace = 0
+				let openBracket = 0
+				let closeBracket = 0
+				
+				for (let i = 0; i < jsonStr.length; i++) {
+					const char = jsonStr[i]
+					if (char === '{') openBrace++
+					else if (char === '}') closeBrace++
+					else if (char === '[') openBracket++
+					else if (char === ']') closeBracket++
+				}
+				
+				// 添加缺失的闭合括号
+				let result = jsonStr
+				while (openBrace > closeBrace) {
+					result += '}'
+					closeBrace++
+				}
+				while (openBracket > closeBracket) {
+					result += ']'
+					closeBracket++
+				}
+				
+				return result
 			},
 			/**
 			 * 切换评价详情折叠状态
@@ -691,10 +808,60 @@
 			color: #4caf50;
 		}
 
+		&.partial {
+			background-color: #fff3e0;
+			color: #ff9800;
+		}
+
 		&.wrong {
 			background-color: #ffebee;
 			color: #f44336;
 		}
+	}
+
+	.item-section {
+		margin-top: 16rpx;
+		padding: 16rpx;
+		border-radius: 12rpx;
+
+		&.strengths {
+			background-color: #e8f5e9;
+		}
+
+		&.improvements {
+			background-color: #fff3e0;
+		}
+
+		&.encouragement {
+			background-color: #f3e5f5;
+		}
+	}
+
+	.section-label {
+		font-size: 24rpx;
+		font-weight: bold;
+		color: #333;
+		margin-bottom: 10rpx;
+		display: block;
+	}
+
+	.list-container {
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.list-item {
+		font-size: 24rpx;
+		color: #555;
+		line-height: 1.5;
+	}
+
+	.encouragement-text {
+		font-size: 24rpx;
+		color: #666;
+		line-height: 1.6;
+		font-style: italic;
 	}
 
 	.item-feedback {

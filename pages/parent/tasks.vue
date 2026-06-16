@@ -1057,6 +1057,8 @@
 		border-radius: 16rpx;
 		padding: 25rpx;
 		box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+		position: relative;
+		z-index: 10;
 	}
 
 	.filter-row {

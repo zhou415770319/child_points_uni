@@ -64,15 +64,21 @@
 			switchTab(item) {
 				// 先更新选中状态
 				const index = this.tabList.findIndex(tab => tab.pagePath === item.pagePath)
-				if (index !== -1) {
-					this.selected = index
-				}
+				console.log('switchTab-----',this.selected,item);
+				
 				// 然后跳转
 				uni.switchTab({
 					url: item.pagePath
 				})
+				if (index !== -1) {
+					this.selected = index
+				}
+				console.log('switchTab-----',this.selected,item);
+
 			},
 			updateSelected(pagePath) {
+										console.log('updateSelectedFromCurrentPage-----',pagePath);
+
 				const index = this.tabList.findIndex(item => item.pagePath === pagePath)
 				if (index !== -1) {
 					this.selected = index
@@ -81,7 +87,9 @@
 			},
 			// 从当前页面自动更新选中状态（通用方法）
 			updateSelectedFromCurrentPage() {
+				
 				try {
+					console.log('updateSelectedFromCurrentPage-----');
 					// 获取当前页面路由
 					const pages = getCurrentPages()
 					if (pages.length > 0) {

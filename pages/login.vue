@@ -31,7 +31,7 @@
 						v-for="option in roleOptions" 
 						:key="option.value"
 						:class="{ active: role === option.value }" 
-						@click="role = option.value"
+						@click="switchRole(option.value)"
 					>
 						{{ option.value === 'parent' ? '👨‍👩‍👧' : '👧' }} {{ option.label }}
 					</view>
@@ -106,8 +106,8 @@
 		data() {
 			return {
 				phone: '13552417395',
-				password: 'abcd123456',
-				secondPassword: '123456',
+				password: '',
+				secondPassword: '',
 				rememberMe: false,
 				role: 'parent',
 				showChildSelect: false,
@@ -120,6 +120,8 @@
 		onLoad() {
 			// 页面加载时初始化角色选项
 			this.initRoleOptions()
+			// 加载记住我的信息
+			this.loadRememberMeInfo()
 		},
 		methods: {
 			async initRoleOptions() {
@@ -143,6 +145,79 @@
 				}
 				console.log('[Login] 角色选项初始化完成:', this.roleOptions)
 			},
+			switchRole(role) {
+				this.role = role
+				// 清除密码（包括二级密码）
+				this.password = ''
+				this.secondPassword = ''
+				this.showPassword = false
+				this.showSecondPassword = false
+				// 尝试加载该角色的记住我信息
+				this.loadRememberMeInfoByRole(role)
+			},
+			loadRememberMeInfoByRole(role) {
+				try {
+					const rememberMeInfo = uni.getStorageSync('rememberMeInfo')
+					if (rememberMeInfo) {
+						const info = JSON.parse(rememberMeInfo)
+						if (role === 'parent' && info.parent) {
+							this.phone = info.parent.phone || ''
+							this.password = info.parent.password || ''
+							this.rememberMe = true
+						} else if (role === 'child' && info.child) {
+							this.phone = info.child.phone || ''
+							this.password = info.child.password || ''
+							this.rememberMe = true
+						} else {
+							// 该角色没有保存的信息，重置记住我状态
+							this.rememberMe = false
+						}
+					} else {
+						this.rememberMe = false
+					}
+				} catch (error) {
+					console.error('[Login] 加载记住我信息失败:', error)
+					this.rememberMe = false
+				}
+			},
+			loadRememberMeInfo() {
+				this.loadRememberMeInfoByRole(this.role)
+			},
+			saveRememberMeInfo() {
+				if (!this.rememberMe) {
+					// 如果不记住，清除之前保存的信息
+					uni.removeStorageSync('rememberMeInfo')
+					return
+				}
+
+				try {
+					// 获取已保存的信息
+					let rememberMeInfo = {}
+					const existingInfo = uni.getStorageSync('rememberMeInfo')
+					if (existingInfo) {
+						rememberMeInfo = JSON.parse(existingInfo)
+					}
+
+					// 根据角色保存信息（不保存二级密码）
+					if (this.role === 'parent') {
+						rememberMeInfo.parent = {
+							phone: this.phone,
+							password: this.password
+							// 不保存二级密码 secondPassword
+						}
+					} else if (this.role === 'child') {
+						rememberMeInfo.child = {
+							phone: this.phone,
+							password: this.password
+						}
+					}
+
+					uni.setStorageSync('rememberMeInfo', JSON.stringify(rememberMeInfo))
+					console.log('[Login] 记住我信息已保存:', rememberMeInfo)
+				} catch (error) {
+					console.error('[Login] 保存记住我信息失败:', error)
+				}
+			},
 			async login() {
 				if (!this.phone) {
 					uni.showToast({ title: '请输入手机号', icon: 'none' })
@@ -163,6 +238,9 @@
 						uni.showToast({ title: result.message, icon: 'none' })
 						return
 					}
+
+					// 保存记住我信息（不保存二级密码）
+					this.saveRememberMeInfo()
 
 					uni.setStorageSync('userRole', this.role)
 					uni.setStorageSync('currentUser', JSON.stringify(result.user))

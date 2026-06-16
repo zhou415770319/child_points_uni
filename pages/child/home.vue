@@ -184,6 +184,11 @@
 				})
 			})
 		},
+		onShow() {
+			if (this.$refs.tabBar) {
+				this.$refs.tabBar.updateSelected('/pages/child/home')
+			}
+		},
 		onUnload() {
 			// 清理所有计时器
 			if (this.timers) {
@@ -217,8 +222,6 @@
 					
 					// 一次云函数调用获取所有数据
 					const result = await feishuRequest.getHomeData(childId)
-					
-					console.log('[Child Home] 云函数返回结果:', JSON.stringify(result, null, 2))
 					
 					if (result.success && result.data) {
 						console.log('[Child Home] 数据解析成功，tasks数量:', result.data.tasks?.length || 0, 'otherTasks数量:', result.data.otherTasks?.length || 0)

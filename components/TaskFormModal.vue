@@ -698,7 +698,7 @@ console.log('任务模板----',{
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		z-index: 1000;
+		z-index: 2000;
 		padding: 40rpx;
 	}
 
@@ -707,9 +707,9 @@ console.log('任务模板----',{
 		max-width: 640rpx;
 		background-color: #fff;
 		border-radius: 20rpx;
-		overflow: hidden;
 		max-height: 80vh;
 		overflow-y: auto;
+		z-index: 2001;
 	}
 
 	.modal-header {

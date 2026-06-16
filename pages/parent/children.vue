@@ -19,7 +19,11 @@
 					<text class="child-name">{{ child.name }}</text>
 					<text class="child-detail">{{ child.grade }} · {{ child.age }}岁</text>
 					<view class="child-stats">
-						<text class="stat">{{ child.total_points }}积分</text>
+						<text class="stat points">{{ child.total_points }}积分</text>
+						<text class="stat coins">
+							<image class="coin-icon" src="/static/svg/jinbi.svg" mode="aspectFit" />
+							{{ child.total_reward_points || 0 }}金币
+						</text>
 					</view>
 					<view class="child-actions">
 						<text class="action-btn edit" @click.stop="editChild(child)">✏️</text>
@@ -250,7 +254,7 @@
 							}
 							
 							return {
-								id: item.record_id,
+								id: item.fields.child_id,
 								name: item.fields.name[0].text || '',
 								avatar: avatarUrl || '👦',
 								avatarFileToken: avatarFileToken,
@@ -258,6 +262,7 @@
 								grade: item.fields.grade?.[0]?.text || item.fields.grade || '',
 								hobby: hobbyData,
 								total_points: item.fields.total_points || 0,
+								total_reward_points: item.fields.total_reward_points || 0,
 								parent_account: item.fields.parent_account || ''
 							}
 						})
@@ -272,11 +277,14 @@
 				}
 			},
 			/**
-			 * 查看儿童详情（预留方法）
+			 * 查看儿童详情
 			 * @param {Object} child - 儿童对象
 			 */
 			viewChild(child) {
-				uni.showToast({ title: `查看 ${child.name}`, icon: 'none' })
+				const childData = encodeURIComponent(JSON.stringify(child))
+				uni.navigateTo({
+					url: `/pages/parent/child-detail?childId=${child.id}&childData=${childData}`
+				})
 			},
 			/**
 			 * 编辑儿童信息
@@ -555,7 +563,22 @@
 
 	.stat {
 		font-size: 24rpx;
-		color: #666;
+		display: flex;
+		align-items: center;
+		gap: 6rpx;
+
+		&.points {
+			color: #667eea;
+		}
+
+		&.coins {
+			color: #ff9800;
+		}
+	}
+
+	.coin-icon {
+		width: 28rpx;
+		height: 28rpx;
 	}
 
 	.child-actions {

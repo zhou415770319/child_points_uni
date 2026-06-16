@@ -555,7 +555,7 @@
 				uni.navigateTo({ url: '/pages/parent/children' })
 			},
 			goToChildDetail(child) {
-				uni.navigateTo({ url: `/pages/parent/children/detail?id=${child.id}` })
+				uni.navigateTo({ url: `/pages/parent/child-detail?id=${child.id}` })
 			},
 			goToTasks() {
 				uni.navigateTo({ url: '/pages/parent/tasks' })
