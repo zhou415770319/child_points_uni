@@ -119,12 +119,12 @@
 	export default {
 		data() {
 			return {
-				phone: '13552417395',
-				password: 'abcd123456',
-				confirmPassword: 'abcd123456',
+				phone: '',
+				password: '',
+				confirmPassword: '',
 				code: '',
-				secondPassword: '123456',
-				nickname: '周飞',
+				secondPassword: '',
+				nickname: '',
 				agreed: false,
 				showModal: false,
 				modalTitle: '',

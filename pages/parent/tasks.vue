@@ -835,12 +835,18 @@
 			},
 			setFilter(filter) {
 				this.currentFilter = filter
+				this.loadTasks()
 			},
 			async loadTasks() {
 				uni.showLoading({ title: '加载中...' })
 				try {
 					// 构建筛选条件
 					const filter = {}
+					
+					// 状态筛选
+					if (this.currentFilter && this.currentFilter !== 'all') {
+						filter.status = this.currentFilter
+					}
 					
 					// 儿童筛选
 					if (this.filterChildId) {

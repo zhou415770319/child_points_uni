@@ -99,12 +99,12 @@
 						<view class="detail-column">
 							<text class="detail-title">⚙️ 设置信息</text>
 							<view class="detail-row" v-if="template.base_points">
-								<text class="detail-label">基础积分</text>
+								<text class="detail-label">积分</text>
 								<text class="detail-value">{{ template.base_points }} 分</text>
 							</view>
 							<view class="detail-row" v-if="template.reward_points">
-								<text class="detail-label">奖励积分</text>
-								<text class="detail-value">{{ template.reward_points }} 分</text>
+								<text class="detail-label">金币</text>
+								<text class="detail-value">{{ template.reward_points }} 个</text>
 							</view>
 							<view class="detail-row" v-if="template.deadline_time">
 								<text class="detail-label">截止时间</text>

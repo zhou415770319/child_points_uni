@@ -46,7 +46,7 @@
 			</view>
 			<view class="form-options">
 				<view class="checkbox-wrap">
-					<view class="checkbox" :class="{ checked: rememberMe }" @click="rememberMe = !rememberMe">
+					<view class="checkbox" :class="{ checked: rememberMe }" @click="toggleRememberMe">
 						<text v-if="rememberMe">✓</text>
 					</view>
 					<text class="checkbox-label">记住我</text>
@@ -105,7 +105,7 @@
 	export default {
 		data() {
 			return {
-				phone: '13552417395',
+				phone: '',
 				password: '',
 				secondPassword: '',
 				rememberMe: false,
@@ -120,8 +120,7 @@
 		onLoad() {
 			// 页面加载时初始化角色选项
 			this.initRoleOptions()
-			// 加载记住我的信息
-			this.loadRememberMeInfo()
+			// 默认不加载记住我的信息，用户勾选后再加载
 		},
 		methods: {
 			async initRoleOptions() {
@@ -152,8 +151,10 @@
 				this.secondPassword = ''
 				this.showPassword = false
 				this.showSecondPassword = false
-				// 尝试加载该角色的记住我信息
-				this.loadRememberMeInfoByRole(role)
+				// 只有勾选记住我时才加载保存的信息
+				if (this.rememberMe) {
+					this.loadRememberMeInfoByRole(role)
+				}
 			},
 			loadRememberMeInfoByRole(role) {
 				try {
@@ -182,6 +183,18 @@
 			},
 			loadRememberMeInfo() {
 				this.loadRememberMeInfoByRole(this.role)
+			},
+			toggleRememberMe() {
+				this.rememberMe = !this.rememberMe
+				if (this.rememberMe) {
+					// 勾选时尝试加载保存的信息
+					this.loadRememberMeInfoByRole(this.role)
+				} else {
+					// 取消勾选时清除保存的信息
+					this.password = ''
+					this.secondPassword = ''
+					uni.removeStorageSync('rememberMeInfo')
+				}
 			},
 			saveRememberMeInfo() {
 				if (!this.rememberMe) {

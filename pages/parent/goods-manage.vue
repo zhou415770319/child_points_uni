@@ -43,8 +43,8 @@
 					</view>
 					<text class="goods-desc">{{ good.description }}</text>
 					<view class="goods-footer">
-						<text class="goods-price">¥{{ good.price }}</text>
-						<text class="goods-points">{{ good.points }}积分</text>
+						<text class="goods-points">⭐ {{ good.base_points }}积分</text>
+						<text class="goods-coins">💰 {{ good.reward_points }}金币</text>
 						<view class="goods-stock" :class="getStockClass(good.stock)">
 							库存: {{ good.stock }}
 						</view>
@@ -97,12 +97,12 @@
 						/>
 					</view>
 					<view class="form-item">
-						<text class="form-label">商品价格</text>
-						<input class="form-input" type="number" v-model="formData.price" placeholder="请输入商品价格" />
+						<text class="form-label">所需积分</text>
+						<input class="form-input" type="number" v-model="formData.base_points" placeholder="请输入所需积分" />
 					</view>
 					<view class="form-item">
-						<text class="form-label">所需积分</text>
-						<input class="form-input" type="number" v-model="formData.points" placeholder="请输入所需积分" />
+						<text class="form-label">所需金币</text>
+						<input class="form-input" type="number" v-model="formData.reward_points" placeholder="请输入所需金币" />
 					</view>
 					<view class="form-item">
 						<text class="form-label">库存数量</text>
@@ -157,8 +157,8 @@
 					name: '',
 					description: '',
 					category: '',
-					price: '',
-					points: '',
+					base_points: '',
+					reward_points: '',
 					stock: '',
 					status: ''
 				},
@@ -228,11 +228,27 @@
 					name: good.name,
 					description: good.description,
 					category: good.category,
-					price: good.price.toString(),
-					points: good.points.toString(),
+					base_points: good.base_points.toString(),
+					reward_points: good.reward_points.toString(),
 					stock: good.stock.toString(),
 					status: good.status
 				}
+				// 图片回显
+				if (good.image && good.image.startsWith('http')) {
+					this.uploadedImage = good.image
+				} else if (good.fileToken) {
+					// 如果只有 fileToken，尝试获取图片URL
+					this.uploadedImage = `https://open.feishu.cn/open-apis/drive/v1/medias/${good.fileToken}/download`
+				}
+				// 确保分类和状态有值（用于uni-data-select回显）
+				this.$nextTick(() => {
+					if (this.formData.category) {
+						this.formData.category = this.formData.category
+					}
+					if (this.formData.status) {
+						this.formData.status = this.formData.status
+					}
+				})
 				this.showAddModal = true
 			},
 			deleteGoods(good) {
@@ -274,8 +290,8 @@
 					name: '',
 					description: '',
 					category: '',
-					price: '',
-					points: '',
+					base_points: '',
+					reward_points: '',
 					stock: '',
 					status: ''
 				}
@@ -298,7 +314,7 @@
 				})
 			},
 			async saveGoods() {
-				if (!this.formData.name || !this.formData.category || !this.formData.points || !this.formData.stock) {
+				if (!this.formData.name || !this.formData.category || !this.formData.stock) {
 					uni.showToast({ title: '请填写完整信息', icon: 'none' })
 					return
 				}
@@ -309,8 +325,8 @@
 					name: this.formData.name,
 					description: this.formData.description,
 					category: this.formData.category,
-					price: parseInt(this.formData.price) || 0,
-					points: parseInt(this.formData.points) || 0,
+					base_points: parseInt(this.formData.base_points) || 0,
+					reward_points: parseInt(this.formData.reward_points) || 0,
 					stock: parseInt(this.formData.stock) || 0,
 					status: this.formData.status || '开启'
 				}
@@ -429,11 +445,12 @@
 								name: name,
 								description: description,
 								category: item.fields.category || '',
-								price: item.fields.price || 0,
-								points: item.fields.points || 0,
+								base_points: item.fields.base_points || 0,
+								reward_points: item.fields.reward_points || 0,
 								stock: item.fields.stock || 0,
 								status: item.fields.status || '开启',
-								fileToken: item.fields.image ? (item.fields.image[0]?.file_token || '') : ''
+								fileToken: item.fields.image ? (item.fields.image[0]?.file_token || '') : '',
+								image: ''
 							}
 						})
 						
@@ -659,15 +676,14 @@
 		align-items: center;
 	}
 
-	.goods-price {
-		font-size: 28rpx;
-		font-weight: bold;
-		color: #f44336;
-	}
-
 	.goods-points {
 		font-size: 24rpx;
 		color: #667eea;
+	}
+
+	.goods-coins {
+		font-size: 24rpx;
+		color: #ff9800;
 	}
 
 	.goods-stock {

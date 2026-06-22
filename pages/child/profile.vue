@@ -39,7 +39,7 @@
 				</view>
 				<view class="points-divider"></view>
 				<view class="points-item">
-					<text class="points-label">奖励积分</text>
+					<text class="points-label">金币</text>
 					<text class="points-value reward">{{ userInfo.total_reward_points || 0 }}</text>
 				</view>
 			</view>

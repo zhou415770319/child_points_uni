@@ -27,7 +27,7 @@
 						<text class="table-id">{{ table.table_id }}</text>
 						<text class="table-fields">{{ table.fields.length }} 个字段</text>
 					</view>
-					<view class="table-actions">
+					<view class="table-actions" v-if="false">
 						<button class="action-btn" @click="configureApi(table)">⚙️ 配置接口</button>
 					</view>
 				</view>

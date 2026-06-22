@@ -19,14 +19,6 @@
 				<text class="stat-value">{{ pendingReviews }}</text>
 				<text class="stat-label">待审核</text>
 			</view>
-			<view class="stat-card points">
-				<text class="stat-value">{{ totalPoints }}</text>
-				<text class="stat-label">总积分</text>
-			</view>
-			<view class="stat-card coins">
-				<text class="stat-value">{{ totalCoins.toFixed(1) }}</text>
-				<text class="stat-label">总金币</text>
-			</view>
 		</view>
 
 		<view class="section">
@@ -155,6 +147,10 @@
 						<text class="modal-label">备注</text>
 						<text class="modal-value">{{ currentRedemption.remark || '无' }}</text>
 					</view>
+					<view class="modal-row approval-comment">
+						<text class="modal-label">审批意见</text>
+						<textarea class="approval-input" v-model="approvalComment" placeholder="请输入审批意见（可选）"></textarea>
+					</view>
 				</view>
 				<view class="modal-footer">
 					<button class="modal-btn cancel" @click="rejectRedemption">拒绝</button>
@@ -188,7 +184,8 @@
 				pendingCheckins: [],
 				pendingRedemptions: [],
 				showRedemptionReview: false,
-				currentRedemption: null
+				currentRedemption: null,
+				approvalComment: ''
 			}
 		},
 		async onLoad() {
@@ -457,6 +454,7 @@
 			closeRedemptionModal() {
 				this.showRedemptionReview = false
 				this.currentRedemption = null
+				this.approvalComment = ''
 			},
 			
 			/**
@@ -475,10 +473,15 @@
 						if (res.confirm) {
 							uni.showLoading({ title: '处理中...' })
 							try {
-								// 更新兑换记录状态为已通过
-								const result = await feishuRequest.updateRecord('兑换记录表', redemption.id, {
-									status: '已通过'
-								})
+								// 更新兑换记录状态为已通过，并保存审批意见
+								const updateData = {
+									status: '已通过',
+									created_time: Date.now()
+								}
+								if (this.approvalComment.trim()) {
+									updateData.approval_comment = this.approvalComment.trim()
+								}
+								const result = await feishuRequest.updateRecord('兑换记录表', redemption.id, updateData)
 								
 								if (result.success) {
 									// 在积分记录表添加一条记录（负数表示扣除）
@@ -525,10 +528,15 @@
 						if (res.confirm) {
 							uni.showLoading({ title: '处理中...' })
 							try {
-								// 更新兑换记录状态为已拒绝
-								const result = await feishuRequest.updateRecord('兑换记录表', this.currentRedemption.id, {
-									status: '已拒绝'
-								})
+								// 更新兑换记录状态为已拒绝，并保存审批意见
+								const updateData = {
+									status: '已拒绝',
+									created_time: Date.now()
+								}
+								if (this.approvalComment.trim()) {
+									updateData.approval_comment = this.approvalComment.trim()
+								}
+								const result = await feishuRequest.updateRecord('兑换记录表', this.currentRedemption.id, updateData)
 								
 								if (result.success) {
 									// 从列表中移除已审核的兑换记录
@@ -1005,6 +1013,26 @@
 		font-size: 28rpx;
 		color: #333;
 		font-weight: 500;
+	}
+
+	.approval-comment {
+		flex-direction: column;
+		align-items: flex-start;
+
+		.modal-label {
+			margin-bottom: 10rpx;
+		}
+	}
+
+	.approval-input {
+		width: 100%;
+		height: 160rpx;
+		padding: 20rpx;
+		font-size: 28rpx;
+		border: 1rpx solid #e8e8e8;
+		border-radius: 10rpx;
+		background-color: #fafafa;
+		box-sizing: border-box;
 	}
 
 	.modal-footer {

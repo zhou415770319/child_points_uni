@@ -83,8 +83,8 @@
 					/>
 				</view>
 				<view class="form-item">
-					<text class="form-label">基础积分</text>
-					<input class="form-input" type="number" v-model="formData.base_points" placeholder="请输入基础积分" />
+					<text class="form-label">积分</text>
+					<input class="form-input" type="number" v-model="formData.base_points" placeholder="请输入积分" />
 				</view>
 				<view class="form-item">
 					<view class="audit-switch">
@@ -93,8 +93,14 @@
 					</view>
 				</view>
 				<view class="form-item" v-if="formData.need_audit">
-					<text class="form-label">奖励积分</text>
-					<input class="form-input" type="number" v-model="formData.reward_points" placeholder="请输入奖励积分（完成任务额外奖励）" />
+					<text class="form-label">金币</text>
+					<input class="form-input" type="number" v-model="formData.reward_points" placeholder="请输入金币（完成任务额外奖励）" />
+				</view>
+				<view class="form-item">
+					<view class="audit-switch">
+						<text class="form-label">参与连续打卡</text>
+						<switch :checked="formData.keep_streak" @change="onKeepStreakChange" />
+					</view>
 				</view>
 				<!-- 任务开始时间 -->
 				<view class="form-item">
@@ -305,6 +311,7 @@
 						batch_create: this.editingTask.batch_create || false,
 						period: this.editingTask.period || '',
 						need_audit: this.editingTask.need_audit || false,
+						keep_streak: this.editingTask.keep_streak || false,
 						child_name: this.parseFeishuField(this.editingTask.child_name),
 						child_id: this.parseFeishuField(this.editingTask.child_id),
 						textbook_id: this.parseFeishuField(this.editingTask.textbook_id),
@@ -340,6 +347,7 @@
 					batch_create: false,
 					period: '',
 					need_audit: false,
+					keep_streak: false,
 					child_name: '',
 					child_id: '',
 					textbook_id: '',
@@ -373,6 +381,10 @@
 			onAuditChange(e) {
 				const value = e?.detail?.value !== undefined ? e.detail.value : e
 				this.formData.need_audit = value
+			},
+			onKeepStreakChange(e) {
+				const value = e?.detail?.value !== undefined ? e.detail.value : e
+				this.formData.keep_streak = value
 			},
 			onBatchCreateChange(e) {
 				const value = e?.detail?.value !== undefined ? e.detail.value : e
@@ -442,6 +454,7 @@
 					this.formData.batch_create = template.batch_create || false
 					this.formData.period = template.period || ''
 					this.formData.need_audit = template.need_audit || false
+					this.formData.keep_streak = template.keep_streak || false
 					
 					// 关联儿童 - 使用统一的解析函数
 					this.formData.child_id = this.parseFeishuField(template.child_id)
@@ -462,6 +475,8 @@
 			async loadTemplates(keyword = '') {
 				try {
 					const params = keyword ? { keyword } : {}
+					// 添加状态过滤，只获取状态为"开启"的模板
+					params.status = '开启'
 					const result = await feishuRequest.queryRecords('任务模板表', params)
 					if (result.success && result.data && result.data.length > 0) {
 						this.templates = result.data.map(item => {
@@ -530,6 +545,7 @@
 						reward_points: this.formData.reward_points ? parseInt(this.formData.reward_points) : 0,
 						deadline_time: this.formData.deadline_time || '',
 						need_audit: this.formData.need_audit || false,
+						keep_streak: this.formData.keep_streak || false,
 						child_id: this.formData.child_id || '',
 						child_name: this.formData.child_name || '',
 						textbook_id: this.formData.textbook_id || '',
@@ -584,6 +600,7 @@ console.log('任务模板----',{
 					base_points: parseInt(this.formData.base_points),
 					reward_points: this.formData.reward_points ? parseInt(this.formData.reward_points) : 0,
 					need_audit: this.formData.need_audit || false,
+					keep_streak: this.formData.keep_streak || false,
 					child_id: this.formData.child_id,
 					textbook_id: this.formData.textbook_id || '',
 					status: this.editingTask?.status || '未开始',
