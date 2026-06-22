@@ -11,10 +11,10 @@ async function getAccessToken(forceRefresh = false) {
 	console.log('[FeishuTools] 获取飞书AccessToken...')
 	
 	// 检查缓存是否有效（提前60秒刷新）
-	if (!forceRefresh && cachedToken && Date.now() < tokenExpiresAt - 60000) {
-		console.log('[FeishuTools] 使用缓存的AccessToken')
-		return { accessToken: cachedToken, expiresIn: Math.floor((tokenExpiresAt - Date.now()) / 1000) }
-	}
+	// if (!forceRefresh && cachedToken && Date.now() < tokenExpiresAt - 60000) {
+	// 	console.log('[FeishuTools] 使用缓存的AccessToken')
+	// 	return { accessToken: cachedToken, expiresIn: Math.floor((tokenExpiresAt - Date.now()) / 1000) }
+	// }
 	
 	// 从环境变量获取配置
 	

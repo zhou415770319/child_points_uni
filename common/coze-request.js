@@ -11,6 +11,19 @@ class CozeRequest {
 	}
 
 	/**
+	 * 获取当前配置
+	 * @returns {Object} 配置对象
+	 */
+	getConfig() {
+		return {
+			workflowUrl: `${this.baseURL}/v1/workflow/run`,
+			apiKey: this.token,
+			workflowId: this.workflowId,
+			baseURL: this.baseURL
+		}
+	}
+
+	/**
 	 * 调用Coze工作流生成任务（流式对话）
 	 * @param {Object} params - 请求参数
 	 * @param {Function} onData - 流式数据回调

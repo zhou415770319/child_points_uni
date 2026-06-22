@@ -374,7 +374,7 @@
 	],
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
-		"navigationBarTitleText": "儿童积分任务系统",
+		"navigationBarTitleText": "童趣乐园",
 		"navigationBarBackgroundColor": "#FFFFFF",
 		"backgroundColor": "#F5F5F5",
 		"enablePullDownRefresh": false,

@@ -254,7 +254,9 @@
 							}
 							
 							return {
-								id: item.fields.child_id,
+								id: item.record_id || item.id,  // 使用飞书记录ID，不是自定义的child_id
+								recordId: item.record_id || item.id,  // 明确保存record_id
+								childId: item.fields.child_id,  // 自定义的child_id字段单独保存
 								name: item.fields.name[0].text || '',
 								avatar: avatarUrl || '👦',
 								avatarFileToken: avatarFileToken,

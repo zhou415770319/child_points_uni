@@ -6,7 +6,7 @@
 		</view>
 		<view class="logo-section">
 			<view class="logo">🎨</view>
-			<text class="app-name">儿童积分任务系统</text>
+			<text class="app-name">童趣乐园</text>
 			<text class="app-desc">让学习更有趣，让成长看得见</text>
 		</view>
 
@@ -45,13 +45,15 @@
 				</view>
 			</view>
 			<view class="form-options">
-				<view class="checkbox-wrap">
-					<view class="checkbox" :class="{ checked: rememberMe }" @click="toggleRememberMe">
-						<text v-if="rememberMe">✓</text>
+				<view class="remember-me" @click="toggleRememberMe">
+					<view class="check-box" :class="{ checked: rememberMe }">
+						<text v-if="rememberMe" class="check-icon">✓</text>
 					</view>
-					<text class="checkbox-label">记住我</text>
+					<text class="remember-text">记住我</text>
 				</view>
-				<text class="forgot-link" @click="forgotPassword">忘记密码？</text>
+				<view class="forgot-wrap" @click="forgotPassword">
+					<text class="forgot-link">忘记密码？</text>
+				</view>
 			</view>
 			<button class="login-btn" @click="login">登录</button>
 			<button class="register-btn" @click="register">注册新账号</button>
@@ -118,9 +120,14 @@
 			}
 		},
 		onLoad() {
+			console.log('[Login] ===== 页面加载开始 =====')
 			// 页面加载时初始化角色选项
 			this.initRoleOptions()
-			// 默认不加载记住我的信息，用户勾选后再加载
+			// 加载上次登录的角色
+			this.loadLastLoginRole()
+			// 页面加载时自动检查是否有保存的记住我信息
+			this.autoLoadRememberMeInfo()
+			console.log('[Login] ===== 页面加载完成 =====')
 		},
 		methods: {
 			async initRoleOptions() {
@@ -146,14 +153,51 @@
 			},
 			switchRole(role) {
 				this.role = role
-				// 清除密码（包括二级密码）
-				this.password = ''
 				this.secondPassword = ''
 				this.showPassword = false
 				this.showSecondPassword = false
-				// 只有勾选记住我时才加载保存的信息
-				if (this.rememberMe) {
-					this.loadRememberMeInfoByRole(role)
+				// 检查是否有该角色的记住我信息
+				this.loadRememberMeInfoByRole(role)
+			},
+			loadLastLoginRole() {
+				try {
+					const lastRole = uni.getStorageSync('lastLoginRole')
+					if (lastRole && (lastRole === 'parent' || lastRole === 'child')) {
+						this.role = lastRole
+						console.log('[Login] loadLastLoginRole - 加载上次登录角色:', this.role)
+					} else {
+						console.log('[Login] loadLastLoginRole - 无上次登录记录，使用默认角色:', this.role)
+					}
+				} catch (error) {
+					console.error('[Login] 加载上次登录角色失败:', error)
+				}
+			},
+			autoLoadRememberMeInfo() {
+				console.log('[Login] autoLoadRememberMeInfo - 当前角色:', this.role)
+				try {
+					const rememberMeInfo = uni.getStorageSync('rememberMeInfo')
+					console.log('[Login] autoLoadRememberMeInfo - 存储中的rememberMeInfo:', rememberMeInfo)
+					if (rememberMeInfo) {
+						const info = JSON.parse(rememberMeInfo)
+						console.log('[Login] autoLoadRememberMeInfo - 解析后的info:', info)
+						if (this.role === 'parent' && info.parent) {
+							this.phone = info.parent.phone || ''
+							this.password = info.parent.password || ''
+							this.rememberMe = true
+							console.log('[Login] autoLoadRememberMeInfo - 加载家长端信息:', this.phone, this.password)
+						} else if (this.role === 'child' && info.child) {
+							this.phone = info.child.phone || ''
+							this.password = info.child.password || ''
+							this.rememberMe = true
+							console.log('[Login] autoLoadRememberMeInfo - 加载儿童端信息:', this.phone, this.password)
+						} else {
+							console.log('[Login] autoLoadRememberMeInfo - 没有对应角色的信息')
+						}
+					} else {
+						console.log('[Login] autoLoadRememberMeInfo - 存储中无rememberMeInfo')
+					}
+				} catch (error) {
+					console.error('[Login] 自动加载记住我信息失败:', error)
 				}
 			},
 			loadRememberMeInfoByRole(role) {
@@ -184,49 +228,86 @@
 			loadRememberMeInfo() {
 				this.loadRememberMeInfoByRole(this.role)
 			},
-			toggleRememberMe() {
+			onRememberMeChange(e) {
+				console.log('[Login] onRememberMeChange - 触发事件:', e)
+				if (e && e.detail !== undefined && e.detail.value !== undefined) {
+					this.rememberMe = e.detail.value
+				} else {
+					this.rememberMe = !this.rememberMe
+				}
+				console.log('[Login] onRememberMeChange - 新状态:', this.rememberMe)
+				this.handleRememberMeChange()
+			},
+			onRememberMeClick() {
+				console.log('[Login] onRememberMeClick - 触发点击')
 				this.rememberMe = !this.rememberMe
+				console.log('[Login] onRememberMeClick - 新状态:', this.rememberMe)
+				this.handleRememberMeChange()
+			},
+			handleRememberMeChange() {
 				if (this.rememberMe) {
-					// 勾选时尝试加载保存的信息
+					console.log('[Login] handleRememberMeChange - 勾选，加载保存的信息')
 					this.loadRememberMeInfoByRole(this.role)
 				} else {
-					// 取消勾选时清除保存的信息
+					console.log('[Login] handleRememberMeChange - 取消勾选，清除密码和存储')
 					this.password = ''
 					this.secondPassword = ''
 					uni.removeStorageSync('rememberMeInfo')
+					console.log('[Login] handleRememberMeChange - 已清除rememberMeInfo存储')
 				}
 			},
+			toggleRememberMe() {
+				console.log('[Login] toggleRememberMe - 点击前 rememberMe:', this.rememberMe)
+				this.rememberMe = !this.rememberMe
+				console.log('[Login] toggleRememberMe - 点击后 rememberMe:', this.rememberMe)
+			},
 			saveRememberMeInfo() {
-				if (!this.rememberMe) {
-					// 如果不记住，清除之前保存的信息
-					uni.removeStorageSync('rememberMeInfo')
-					return
-				}
+				console.log('[Login] saveRememberMeInfo - rememberMe:', this.rememberMe)
+				console.log('[Login] saveRememberMeInfo - 当前角色:', this.role)
 
 				try {
-					// 获取已保存的信息
 					let rememberMeInfo = {}
 					const existingInfo = uni.getStorageSync('rememberMeInfo')
 					if (existingInfo) {
 						rememberMeInfo = JSON.parse(existingInfo)
 					}
+					console.log('[Login] saveRememberMeInfo - 现有存储:', rememberMeInfo)
 
-					// 根据角色保存信息（不保存二级密码）
-					if (this.role === 'parent') {
-						rememberMeInfo.parent = {
-							phone: this.phone,
-							password: this.password
-							// 不保存二级密码 secondPassword
+					if (!this.rememberMe) {
+						// 未勾选记住我，只清除当前角色的信息，保留另一角色的信息
+						console.log('[Login] saveRememberMeInfo - 未勾选记住我，清除当前角色信息')
+						if (this.role === 'parent') {
+							delete rememberMeInfo.parent
+							console.log('[Login] saveRememberMeInfo - 已清除家长端信息')
+						} else if (this.role === 'child') {
+							delete rememberMeInfo.child
+							console.log('[Login] saveRememberMeInfo - 已清除儿童端信息')
 						}
-					} else if (this.role === 'child') {
-						rememberMeInfo.child = {
-							phone: this.phone,
-							password: this.password
+					} else {
+						// 勾选记住我，保存当前角色的信息
+						if (this.role === 'parent') {
+							rememberMeInfo.parent = {
+								phone: this.phone,
+								password: this.password
+							}
+							console.log('[Login] saveRememberMeInfo - 保存家长端信息:', this.phone)
+						} else if (this.role === 'child') {
+							rememberMeInfo.child = {
+								phone: this.phone,
+								password: this.password
+							}
+							console.log('[Login] saveRememberMeInfo - 保存儿童端信息:', this.phone)
 						}
 					}
 
-					uni.setStorageSync('rememberMeInfo', JSON.stringify(rememberMeInfo))
-					console.log('[Login] 记住我信息已保存:', rememberMeInfo)
+					// 如果还有剩余信息则保存，否则清除整个存储
+					if (Object.keys(rememberMeInfo).length > 0) {
+						uni.setStorageSync('rememberMeInfo', JSON.stringify(rememberMeInfo))
+						console.log('[Login] saveRememberMeInfo - 最终保存:', rememberMeInfo)
+					} else {
+						uni.removeStorageSync('rememberMeInfo')
+						console.log('[Login] saveRememberMeInfo - 所有信息已清空，移除存储')
+					}
 				} catch (error) {
 					console.error('[Login] 保存记住我信息失败:', error)
 				}
@@ -255,7 +336,10 @@
 					// 保存记住我信息（不保存二级密码）
 					this.saveRememberMeInfo()
 
+					// 保存当前角色
 					uni.setStorageSync('userRole', this.role)
+					// 记录上次登录的角色
+					uni.setStorageSync('lastLoginRole', this.role)
 					uni.setStorageSync('currentUser', JSON.stringify(result.user))
 
 					await this.loadCategories()
@@ -459,36 +543,48 @@
 		margin-bottom: 30rpx;
 	}
 
-	.checkbox-wrap {
+	.remember-me {
 		display: flex;
 		align-items: center;
-		gap: 10rpx;
+		gap: 12rpx;
+		padding: 10rpx 15rpx;
+		cursor: pointer;
 	}
 
-	.checkbox {
-		width: 36rpx;
-		height: 36rpx;
-		border: 2rpx solid #ddd;
-		border-radius: 6rpx;
+	.check-box {
+		width: 40rpx;
+		height: 40rpx;
+		border: 2rpx solid #ccc;
+		border-radius: 8rpx;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 20rpx;
-		color: #fff;
-
-		&.checked {
-			background-color: #667eea;
-			border-color: #667eea;
-		}
+		background-color: #fff;
 	}
 
-	.checkbox-label {
+	.check-box.checked {
+		background-color: #667eea;
+		border-color: #667eea;
+	}
+
+	.check-icon {
 		font-size: 24rpx;
+		color: #fff;
+		font-weight: bold;
+	}
+
+	.remember-text {
+		font-size: 26rpx;
 		color: #666;
 	}
 
+	.forgot-wrap {
+		padding: 10rpx 15rpx;
+		cursor: pointer;
+	}
+
 	.forgot-link {
-		font-size: 24rpx;
+		font-size: 26rpx;
 		color: #667eea;
 	}
 
