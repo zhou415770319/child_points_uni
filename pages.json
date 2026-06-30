@@ -409,13 +409,13 @@
 			"text": "首页"
 		}, {
 			"pagePath": "pages/parent/manage",
-			"iconPath": "static/tabbar/list.png",
-			"selectedIconPath": "static/tabbar/list_active.png",
+			"iconPath": "static/tabbar/grid.png",
+			"selectedIconPath": "static/tabbar/grid_active.png",
 			"text": "管理"
 		}, {
 			"pagePath": "pages/parent/report",
-			"iconPath": "static/tabbar/list.png",
-			"selectedIconPath": "static/tabbar/list_active.png",
+			"iconPath": "static/tabbar/me.png",
+			"selectedIconPath": "static/tabbar/me_active.png",
 			"text": "报告"
 		}, {
 			"pagePath": "pages/child/home",

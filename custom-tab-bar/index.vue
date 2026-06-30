@@ -1,15 +1,22 @@
 <template>
 	<view class="tab-bar">
 		<view class="tab-bar-item" v-for="(item, index) in tabList" :key="index" @click="switchTab(item)">
-			<view class="icon-wrapper">
-				<text :class="['icon', { active: selected === index }]">{{ item.icon }}</text>
-			</view>
+			<image :src="selected === index ? item.selectedIconPath : item.iconPath" class="icon" mode="aspectFit"></image>
 			<text :class="['tab-text', { active: selected === index }]">{{ item.text }}</text>
 		</view>
 	</view>
 </template>
 
 <script>
+	const icons = {
+		list: require('../static/tabbar/list.png'),
+		listActive: require('../static/tabbar/list_active.png'),
+		grid: require('../static/tabbar/grid.png'),
+		gridActive: require('../static/tabbar/grid_active.png'),
+		me: require('../static/tabbar/me.png'),
+		meActive: require('../static/tabbar/me_active.png')
+	}
+
 	export default {
 		data() {
 			return {
@@ -24,17 +31,20 @@
 						{
 							pagePath: '/pages/parent/dashboard',
 							text: '首页',
-							icon: '🏠'
+							iconPath: icons.list,
+							selectedIconPath: icons.listActive
 						},
 						{
 							pagePath: '/pages/parent/manage',
 							text: '管理',
-							icon: '⚙️'
+							iconPath: icons.grid,
+							selectedIconPath: icons.gridActive
 						},
 						{
 							pagePath: '/pages/parent/report',
 							text: '报告',
-							icon: '📊'
+							iconPath: icons.me,
+							selectedIconPath: icons.meActive
 						}
 					]
 				} else {
@@ -42,55 +52,51 @@
 						{
 							pagePath: '/pages/child/home',
 							text: '首页',
-							icon: '🏠'
+							iconPath: icons.list,
+							selectedIconPath: icons.listActive
 						},
 						{
 							pagePath: '/pages/child/mall',
 							text: '商城',
-							icon: '🛍️'
+							iconPath: icons.me,
+							selectedIconPath: icons.meActive
 						}
 					]
 				}
 			}
 		},
 		created() {
-			this.role = uni.getStorageSync('userRole') || 'parent'
+			this.updateSelectedFromCurrentPage()
 		},
 		onShow() {
-			// 自动检测当前页面并更新选中状态
 			this.updateSelectedFromCurrentPage()
 		},
 		methods: {
 			switchTab(item) {
-				// 先更新选中状态
 				const index = this.tabList.findIndex(tab => tab.pagePath === item.pagePath)
-				console.log('switchTab-----',this.selected,item);
-				
-				// 然后跳转
-				uni.switchTab({
-					url: item.pagePath
-				})
-				if (index !== -1) {
+				if (index !== -1 && index !== this.selected) {
 					this.selected = index
+					uni.switchTab({
+						url: item.pagePath
+					})
 				}
-				console.log('switchTab-----',this.selected,item);
-
 			},
 			updateSelected(pagePath) {
-										console.log('updateSelectedFromCurrentPage-----',pagePath);
-
+				if (pagePath.includes('/parent/')) {
+					this.role = 'parent'
+				} else if (pagePath.includes('/child/')) {
+					this.role = 'child'
+				} else {
+					this.role = uni.getStorageSync('userRole') || 'parent'
+				}
+				
 				const index = this.tabList.findIndex(item => item.pagePath === pagePath)
 				if (index !== -1) {
 					this.selected = index
 				}
-				this.role = uni.getStorageSync('userRole') || 'parent'
 			},
-			// 从当前页面自动更新选中状态（通用方法）
 			updateSelectedFromCurrentPage() {
-				
 				try {
-					console.log('updateSelectedFromCurrentPage-----');
-					// 获取当前页面路由
 					const pages = getCurrentPages()
 					if (pages.length > 0) {
 						const currentPage = pages[pages.length - 1]
@@ -118,7 +124,7 @@
 		align-items: center;
 		padding-bottom: env(safe-area-inset-bottom);
 		border-top: 1rpx solid #E5E5E5;
-		z-index: 999;
+		z-index: 9999;
 	}
 
 	.tab-bar-item {
@@ -130,18 +136,12 @@
 		height: 100%;
 	}
 
-	.icon-wrapper {
-		height: 50rpx;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
 	.icon {
-		font-size: 40rpx;
+		width: 48rpx;
+		height: 48rpx;
 		opacity: 0.6;
 
-		&.active {
+		.active {
 			opacity: 1;
 		}
 	}

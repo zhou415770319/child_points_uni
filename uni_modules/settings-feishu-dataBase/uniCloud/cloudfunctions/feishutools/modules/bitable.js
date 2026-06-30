@@ -181,7 +181,8 @@ async function queryRecords(params) {
 			'Content-Type': 'application/json'
 		},
 		data: requestData,
-		dataType: 'json'
+		dataType: 'json',
+		timeout: 30000
 	})
 	
 	console.log('[FeishuTools] 查询响应:', JSON.stringify(response.data))
@@ -256,7 +257,8 @@ async function searchRecords(params) {
 			'Content-Type': 'application/json'
 		},
 		data: requestData,
-		dataType: 'json'
+		dataType: 'json',
+		timeout: 30000
 	})
 	
 	console.log('[FeishuTools] 搜索响应:', JSON.stringify(response.data))

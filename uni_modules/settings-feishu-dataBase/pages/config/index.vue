@@ -285,6 +285,8 @@ export default {
 	background-color: #fff0f0;
 	color: #ff4d4f;
 	border: 2rpx solid #ffccc7;
+	margin-left: 10px;
+	margin-right: 10px;
 }
 
 .base-list {

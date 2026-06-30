@@ -48,7 +48,7 @@ async function getAccessToken(forceRefresh = false) {
 		cachedToken = response.data.tenant_access_token
 		tokenExpiresAt = Date.now() + response.data.expire * 1000
 		
-		console.log('[FeishuTools] 获取AccessToken成功')
+		console.log('[FeishuTools] 获取AccessToken成功',cachedToken)
 		return {
 			accessToken: cachedToken,
 			expiresIn: response.data.expire

@@ -1,0 +1,7 @@
+{
+    "name": "queryFeishuData",
+    "version": "1.0.0",
+    "description": "飞书数据查询云函数",
+    "main": "index.js",
+    "dependencies": {}
+}

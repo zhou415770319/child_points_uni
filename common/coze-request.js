@@ -125,20 +125,20 @@ class CozeRequest {
 	 * @param {Object} feishuConfig - 飞书多维表格配置
 	 * @returns {Object} 格式化的请求参数
 	 */
-	buildTaskParams(prompt, count, difficulty, userInfo = {}, feishuConfig = {}) {
-		// 构建用户信息字符串
-		const userInfoStr = JSON.stringify({
-			姓名: userInfo.name || '',
-			年级: userInfo.grade || '',
-			年龄: userInfo.age || '',
-			兴趣: userInfo.hobby || ''
-		})
-
+	buildTaskParams(prompt, count, difficulty, userInfo = {}, feishuConfig = {}, type = 'createTask') {
 		return {
 			content: prompt,
-			userInfo: userInfoStr,
+			userInfo: {
+				child_id: userInfo.child_id || '',
+				name: userInfo.name || '',
+				grade: userInfo.grade || '',
+				age: userInfo.age || '',
+				hobby: userInfo.hobby || ''
+			},
 			task_count: count,
-			difficulty: difficulty
+			difficulty: difficulty,
+			type: type,
+			feishuConfig: feishuConfig
 		}
 	}
 }

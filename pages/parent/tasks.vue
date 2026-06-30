@@ -366,7 +366,7 @@
 			// 处理任务保存
 			async handleTaskSave({ data, isEdit, editId, isBatch = false }) {
 				uni.showLoading({ title: '保存中...' })
-
+				console.log('handleTaskSave----',data,isBatch)
 				try {
 					if (isEdit) {
 						const success = await this.updateTaskToTable(editId, data)
@@ -393,6 +393,7 @@
 							start_time: task.start_time,
 							deadline_time: task.deadline_time || '',
 							need_audit: task.need_audit || false,
+							keep_streak: taskData.keep_streak || false,
 							child_id: task.child_id,
 							textbook_id: task.textbook_id || '',
 							status: task.status || '进行中'
@@ -424,6 +425,7 @@
 							icon: result.success && result.records ? 'success' : 'none' 
 						})
 					} else {
+						console.log('handleTaskSave----',data)
 						const recordId = await this.addTaskToTable(data)
 						if (recordId) {
 							this.tasks.unshift({
@@ -466,6 +468,7 @@
 						base_points: taskData.base_points,
 						reward_points: taskData.reward_points || 0,
 						need_audit: taskData.need_audit || false,
+						keep_streak: taskData.keep_streak || false,
 						child_id: taskData.child_id,
 						textbook_id: taskData.textbook_id || ''
 					}
@@ -586,6 +589,7 @@
 								start_time: new Date().getTime(),
 								deadline_time: task.deadline_time || '',
 								need_audit: task.need_audit || false,
+								keep_streak: taskData.keep_streak || false,
 								child_id: childId,
 								textbook_id: task.textbook_id || '',
 								status: '未开始'
@@ -644,6 +648,7 @@
 						start_time: new Date().getTime(),
 						deadline_time: task.deadline_time || '',
 						need_audit: task.need_audit || false,
+						keep_streak: taskData.keep_streak || false,
 						child_id: childId,
 						textbook_id: task.textbook_id || '',
 						status: '未开始'
@@ -912,6 +917,7 @@
 									base_points: item.fields.base_points || 0,
 									reward_points: reward_points,
 									need_audit: need_audit,
+									keep_streak: item.fields.keep_streak || false,
 									audit_status: audit_status,
 									child_id: childId,
 									child_name: childName,
@@ -940,7 +946,9 @@
 						type: taskData.type,
 						difficulty: taskData.difficulty,
 						base_points: taskData.base_points,
+						reward_points: taskData.reward_points || 0,
 						need_audit: taskData.need_audit || false,
+						keep_streak: taskData.keep_streak || false,
 						child_id: taskData.child_id,
 						status: taskData.status || '进行中'
 					}
@@ -957,6 +965,14 @@
 					if (taskData.textbook_id) {
 						data.textbook_id = taskData.textbook_id
 					}
+					
+					// 过滤掉空字符串、null、undefined的字段
+					Object.keys(data).forEach(key => {
+						if (data[key] === '' || data[key] === null || data[key] === undefined) {
+							delete data[key]
+						}
+					})
+					console.log('[Tasks] 添加任务数据（已过滤空字段）:', data)
 					const result = await feishuRequest.addRecord('任务表', data)
 					if (result.success) {
 						return result.recordId
@@ -977,6 +993,7 @@
 						difficulty: taskData.difficulty,
 						base_points: taskData.base_points,
 						need_audit: taskData.need_audit || false,
+						keep_streak: taskData.keep_streak || false,
 						child_id: taskData.child_id,
 						child_name: taskData.child_name
 					}

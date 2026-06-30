@@ -6,6 +6,25 @@
 				<text class="modal-close" @click="handleClose">✕</text>
 			</view>
 			
+			<!-- 儿童选择区域 -->
+			<view class="child-selector" v-if="children.length > 0">
+				<view class="child-select-row">
+					<text class="child-select-label">选择儿童：</text>
+					<picker :value="selectedChildIndex" :range="children" range-key="name" @change="handleChildChange">
+						<view class="picker-content">
+							<text class="picker-text">{{ selectedChild?.name || '请选择' }}</text>
+							<text class="picker-arrow">▼</text>
+						</view>
+					</picker>
+				</view>
+			</view>
+			
+			<!-- 无儿童提示 -->
+			<view class="no-child-tip" v-else>
+				<text class="tip-icon">⚠️</text>
+				<text class="tip-text">请先添加儿童信息</text>
+			</view>
+			
 			<!-- 对话区域 -->
 			<scroll-view class="chat-area" scroll-y :scroll-into-view="scrollToId" scroll-with-animation>
 				<view class="chat-messages">
@@ -58,7 +77,7 @@
 					<button 
 						class="send-btn" 
 						@click="handleSend"
-						:disabled="isGenerating || !inputMessage.trim()"
+						:disabled="isGenerating || !inputMessage.trim() || !selectedChild"
 					>{{ isGenerating ? '生成中...' : '发送' }}</button>
 				</view>
 			</view>
@@ -83,6 +102,9 @@ export default {
 		}
 	},
 	emits: ['close', 'tasks-generated'],
+	mounted() {
+		this.clearExpiredHistory()
+	},
 	data() {
 		return {
 			inputMessage: '',
@@ -90,18 +112,26 @@ export default {
 			isGenerating: false,
 			isSaving: false,
 			scrollToId: '',
+			selectedChild: null,
+			selectedChildIndex: 0,
+			chatHistory: {},
 			quickPrompts: [
 				'生成今日打卡任务',
-				'生成一周学习计划',
-				'生成阅读任务',
-				'生成数学练习任务'
+				'生成一周学习计划'
 			]
 		}
 	},
 	watch: {
 		visible(val) {
 			if (val) {
+				if (this.children.length > 0) {
+					this.selectedChild = this.children[0]
+					this.selectedChildIndex = 0
+					this.loadChatHistory()
+				}
 				this.scrollToBottom()
+			} else {
+				this.saveChatHistory()
 			}
 		},
 		messages() {
@@ -111,8 +141,68 @@ export default {
 		}
 	},
 	methods: {
+		handleChildChange(e) {
+			const index = e.detail.value
+			
+			// 先保存当前儿童的聊天记录（切换前）
+			this.saveChatHistory()
+			
+			// 然后切换到新儿童
+			this.selectedChildIndex = index
+			this.selectedChild = this.children[index]
+			
+			// 最后加载新儿童的聊天记录
+			this.loadChatHistory()
+		},
+		loadChatHistory() {
+			console.log('this.selectedChild-----',this.selectedChild);
+			
+			if (!this.selectedChild) return
+			
+			const today = new Date().toISOString().split('T')[0]
+			const cacheKey = `chat_history_${this.selectedChild.child_id}_${today}`
+			
+			try {
+				const historyStr = uni.getStorageSync(cacheKey)
+				console.log('this.historyStr-----',historyStr,cacheKey);
+
+				if (historyStr) {
+					this.messages = JSON.parse(historyStr)
+				} else {
+					this.messages = []
+				}
+			} catch (e) {
+				console.warn('[AIChatModal] 加载聊天记录失败:', e)
+				this.messages = []
+			}
+		},
+		saveChatHistory() {
+			if (!this.selectedChild || this.messages.length === 0) return
+			
+			const today = new Date().toISOString().split('T')[0]
+			const cacheKey = `chat_history_${this.selectedChild.child_id}_${today}`
+			
+			try {
+				uni.setStorageSync(cacheKey, JSON.stringify(this.messages))
+			} catch (e) {
+				console.warn('[AIChatModal] 保存聊天记录失败:', e)
+			}
+		},
+		clearExpiredHistory() {
+			const today = new Date().toISOString().split('T')[0]
+			try {
+				const keys = uni.getStorageInfoSync().keys || []
+				keys.forEach(key => {
+					if (key.startsWith('chat_history_') && !key.endsWith(today)) {
+						uni.removeStorageSync(key)
+					}
+				})
+			} catch (e) {
+				console.warn('[AIChatModal] 清理过期聊天记录失败:', e)
+			}
+		},
 		handleClose() {
-			this.messages = []
+			this.saveChatHistory()
 			this.inputMessage = ''
 			this.$emit('close')
 		},
@@ -128,6 +218,11 @@ export default {
 		async handleSend() {
 			const message = this.inputMessage.trim()
 			if (!message || this.isGenerating) return
+
+			if (!this.selectedChild) {
+				uni.showToast({ title: '请先选择儿童', icon: 'none' })
+				return
+			}
 
 			// 添加用户消息
 			this.messages.push({
@@ -148,23 +243,56 @@ export default {
 			this.isGenerating = true
 
 			try {
-				// 获取儿童信息
-				const child = this.children[0]
+				const child = this.selectedChild
 
 				// 构建用户信息
 				const userInfo = child ? {
+					child_id: child.child_id || '',
 					name: child.name,
 					grade: child.grade || '',
 					age: child.age || '',
-					interests: child.interests || ''
+					hobby: child.hobby || ''
 				} : {}
+
+				// 判断任务类型（今日/一周）
+				const taskType = this.getTaskType(message)
+
+				// 通过云函数获取用户任务和任务模板列表
+				let userTasks = []
+				let taskTemplates = []
+				try {
+					console.log('[AIChatModal] 通过feishuRequest获取任务数据')
+					
+					const [userTasksResult, templatesResult] = await Promise.all([
+						this.queryUserTasks(userInfo.child_id, taskType),
+						this.queryTaskTemplates(userInfo.child_id)
+					])
+					
+					if (userTasksResult.success) {
+						userTasks = userTasksResult.list || []
+						console.log('[AIChatModal] 获取用户任务成功，共', userTasks.length, '条')
+					} else {
+						console.warn('[AIChatModal] 获取用户任务失败:', userTasksResult.error)
+					}
+					
+					if (templatesResult.success) {
+						taskTemplates = templatesResult.list || []
+						console.log('[AIChatModal] 获取任务模板成功，共', taskTemplates.length, '条')
+					} else {
+						console.warn('[AIChatModal] 获取任务模板失败:', templatesResult.error)
+					}
+				} catch (e) {
+					console.warn('[AIChatModal] 调用云函数失败:', e)
+				}
 
 				// 构建请求参数
 				const params = cozeRequest.buildTaskParams(
 					message,
 					5,
 					'中等',
-					userInfo
+					userInfo,
+					{ userTasks, taskTemplates },
+					'createTask'
 				)
 
 				console.log('[AIChatModal] Coze请求参数:', params)
@@ -180,39 +308,59 @@ export default {
 				console.log('[AIChatModal] Coze响应结果:', result)
 
 				if (result.success && result.data) {
-					const data = result.data
-					console.log('[AIChatModal] 工作流返回数据:', data)
-					
-					// 提取 output 字段
-					let outputContent = ''
-					
-					if (data.output) {
-						// output 字段存在
-						if (typeof data.output === 'string') {
-							outputContent = data.output
-						} else if (typeof data.output === 'object' && data.output.content) {
-							outputContent = data.output.content
-						} else {
-							try {
-								outputContent = JSON.stringify(data.output)
-							} catch {
-								outputContent = String(data.output)
-							}
-						}
-					} else if (data.message) {
-						// 尝试 message 字段
-						outputContent = data.message
-					} else if (data.data && data.data.output) {
-						// 尝试 data.output
-						outputContent = data.data.output
+				let data = result.data
+				console.log('[AIChatModal] 工作流返回数据:', data)
+				
+				// 如果 data.data 是字符串，尝试解析为 JSON
+				if (data.data && typeof data.data === 'string') {
+					try {
+						data.data = JSON.parse(data.data)
+						console.log('[AIChatModal] 解析后的 data.data:', data.data)
+					} catch (e) {
+						console.warn('[AIChatModal] data.data 不是有效的 JSON 字符串:', e)
+					}
+				}
+				
+				// 提取 output 字段
+				let outputContent = ''
+				
+				if (data.output) {
+					// output 字段存在
+					if (typeof data.output === 'string') {
+						outputContent = data.output
+					} else if (typeof data.output === 'object' && data.output.content) {
+						outputContent = data.output.content
 					} else {
-						// 兜底：将整个数据转为字符串
 						try {
-							outputContent = JSON.stringify(data)
+							outputContent = JSON.stringify(data.output)
 						} catch {
-							outputContent = String(data)
+							outputContent = String(data.output)
 						}
 					}
+				} else if (data.message) {
+					// 尝试 message 字段
+					outputContent = data.message
+				} else if (data.data && data.data.output) {
+					// 尝试 data.data.output（已解析后的）
+					if (typeof data.data.output === 'string') {
+						outputContent = data.data.output
+					} else if (typeof data.data.output === 'object' && data.data.output.content) {
+						outputContent = data.data.output.content
+					} else {
+						try {
+							outputContent = JSON.stringify(data.data.output)
+						} catch {
+							outputContent = String(data.data.output)
+						}
+					}
+				} else {
+					// 兜底：将整个数据转为字符串
+					try {
+						outputContent = JSON.stringify(data)
+					} catch {
+						outputContent = String(data)
+					}
+				}
 
 					console.log('[AIChatModal] 提取的output内容:', outputContent)
 					
@@ -288,9 +436,9 @@ export default {
 			}
 
 			// 获取儿童信息
-			const child = this.children[0]
+			const child = this.selectedChild
 			if (!child) {
-				uni.showToast({ title: '请先添加儿童信息', icon: 'none' })
+				uni.showToast({ title: '请先选择儿童', icon: 'none' })
 				return
 			}
 
@@ -298,7 +446,7 @@ export default {
 			uni.showLoading({ title: '保存中...' })
 
 			try {
-				const childId = child.id || ''
+				const childId = child.child_id || ''
 				let successCount = 0
 				const savedTasks = []
 
@@ -318,11 +466,10 @@ export default {
 						status: '未开始'
 					}
 
-					// 调用飞书多维表格添加任务
-					const recordId = await feishuRequest.addRecord('任务表', taskData)
-					if (recordId) {
+					const result = await feishuRequest.addRecord('任务表', taskData)
+					if (result.success && result.recordId) {
 						savedTasks.push({
-							id: recordId,
+							id: result.recordId,
 							...taskData
 						})
 						successCount++
@@ -361,6 +508,115 @@ export default {
 			} finally {
 				this.isSaving = false
 			}
+		},
+		getTaskType(message) {
+			const lowerMsg = message.toLowerCase()
+			if (lowerMsg.includes('一周') || lowerMsg.includes('7天') || lowerMsg.includes('七天')) {
+				return 'week'
+			}
+			return 'today'
+		},
+		async queryUserTasks(childId, taskType = 'today') {
+			if (!childId) {
+				return { success: false, error: '缺少childId' }
+			}
+
+			try {
+				console.log('[AIChatModal] 通过feishuRequest查询用户任务，childId:', childId, 'taskType:', taskType)
+				
+				const result = await feishuRequest.queryRecords('任务表', { child_id: childId }, { pageSize: 100 })
+				
+				console.log('[AIChatModal] 查询用户任务返回:', result)
+				
+				if (result.success) {
+					let tasks = (result.data || []).map(item => {
+						const fields = item.fields || {}
+						return {
+							recordId: item.record_id || '',
+							title: fields.title?.[0]?.text || fields.title || '',
+							description: fields.description?.[0]?.text || fields.description || '',
+							type: fields.type?.[0]?.text || fields.type || '',
+							difficulty: fields.difficulty?.[0]?.text || fields.difficulty || '',
+							basePoints: fields.base_points || 0,
+							rewardPoints: fields.reward_points || 0,
+							status: fields.status?.[0]?.text || fields.status || '',
+							childId: fields.child_id?.[0]?.text || fields.child_id || '',
+							deadlineTime: fields.deadline_time || '',
+							startTime: fields.start_time || fields.created_time || '',
+							createdAt: fields.created_at || fields.created_time || '',
+							needAudit: fields.need_audit || false
+						}
+					})
+					
+					// 前端过滤时间范围
+					if (taskType === 'today') {
+						const today = new Date()
+						const startTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+						const endTime = startTime + 24 * 60 * 60 * 1000
+						tasks = tasks.filter(task => {
+							const taskTime = typeof task.startTime === 'number' ? task.startTime : new Date(task.startTime).getTime()
+							return taskTime >= startTime && taskTime < endTime
+						})
+					} else if (taskType === 'week') {
+						const today = new Date()
+						const dayOfWeek = today.getDay() || 7
+						const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dayOfWeek + 1)
+						const sunday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (7 - dayOfWeek))
+						const startTime = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()).getTime()
+						const endTime = new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + 1).getTime()
+						tasks = tasks.filter(task => {
+							const taskTime = typeof task.startTime === 'number' ? task.startTime : new Date(task.startTime).getTime()
+							return taskTime >= startTime && taskTime < endTime
+						})
+					}
+					
+					return { success: true, total: tasks.length, list: tasks }
+				}
+				return { success: false, error: '查询失败' }
+			} catch (error) {
+				console.error('[AIChatModal] 查询用户任务失败:', error)
+				return { success: false, error: error.message }
+			}
+		},
+		async queryTaskTemplates(childId) {
+			try {
+				console.log('[AIChatModal] 通过feishuRequest查询任务模板，childId:', childId)
+				
+				const result = await feishuRequest.queryRecords('任务模板表', {}, { pageSize: 100 })
+				
+				console.log('[AIChatModal] 查询任务模板返回:', result)
+				
+				if (result.success) {
+					let templates = (result.data || []).map(item => {
+						const fields = item.fields || {}
+						return {
+							recordId: item.record_id || '',
+							title: fields.title?.[0]?.text || fields.title || '',
+							description: fields.description?.[0]?.text || fields.description || '',
+							type: fields.type?.[0]?.text || fields.type || '',
+							category: fields.category?.[0]?.text || fields.category || '',
+							subject: fields.subject?.[0]?.text || fields.subject || '',
+							difficulty: fields.difficulty?.[0]?.text || fields.difficulty || '',
+							basePoints: fields.base_points || 0,
+							rewardPoints: fields.reward_points || 0,
+							frequency: fields.frequency?.[0]?.text || fields.frequency || '',
+							tags: Array.isArray(fields.tags) ? fields.tags.map(t => t.text || t) : [],
+							grade: fields.grade?.[0]?.text || fields.grade || '',
+							childId: fields.child_id?.[0]?.text || fields.child_id || ''
+						}
+					})
+					
+					if (childId) {
+						templates = templates.filter(t => !t.childId || t.childId === childId || t.childId === String(childId))
+					}
+					
+					return { success: true, total: templates.length, list: templates }
+				}
+				return { success: false, error: '查询失败' }
+			} catch (error) {
+				console.error('[AIChatModal] 查询任务模板失败:', error)
+				return { success: false, error: error.message }
+			}
 		}
 	}
 }
@@ -376,7 +632,7 @@ export default {
 	background: rgba(0, 0, 0, 0.5);
 	display: flex;
 	align-items: flex-end;
-	z-index: 1000;
+	z-index: 999;
 }
 
 .chat-modal {
@@ -386,6 +642,9 @@ export default {
 	background: #fff;
 	display: flex;
 	flex-direction: column;
+	position: relative;
+	z-index: 1000;
+	padding-bottom: calc(100rpx + env(safe-area-inset-bottom));
 }
 
 .modal-header {
@@ -394,6 +653,66 @@ export default {
 	justify-content: space-between;
 	padding: 30rpx;
 	border-bottom: 1rpx solid #eee;
+	position: relative;
+	z-index: 1;
+}
+
+.child-selector {
+	padding: 20rpx 30rpx;
+	background: #fafafa;
+	border-bottom: 1rpx solid #eee;
+	position: relative;
+	z-index: 2;
+}
+
+.child-select-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.child-select-label {
+	font-size: 26rpx;
+	color: #666;
+}
+
+.picker-content {
+	display: flex;
+	align-items: center;
+	padding: 16rpx 24rpx;
+	background: #fff;
+	border: 2rpx solid #07c160;
+	border-radius: 40rpx;
+	min-width: 160rpx;
+}
+
+.picker-text {
+	font-size: 26rpx;
+	color: #333;
+	margin-right: 8rpx;
+}
+
+.picker-arrow {
+	font-size: 20rpx;
+	color: #999;
+}
+
+.no-child-tip {
+	padding: 40rpx;
+	text-align: center;
+	background: #fff8f0;
+	border-bottom: 1rpx solid #ffe0c8;
+}
+
+.tip-icon {
+	font-size: 48rpx;
+	display: block;
+	margin-bottom: 12rpx;
+}
+
+.tip-text {
+	font-size: 28rpx;
+	color: #ff9900;
 }
 
 .modal-title {

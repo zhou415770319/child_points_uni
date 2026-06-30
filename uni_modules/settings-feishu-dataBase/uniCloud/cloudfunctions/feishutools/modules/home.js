@@ -72,7 +72,8 @@ async function getHomeData(params) {
 					data: {
 						filter: filter
 					},
-					dataType: 'json'
+					dataType: 'json',
+					timeout: 30000
 				})
 				
 				console.log('[FeishuTools] 获取任务响应:', {
@@ -135,7 +136,8 @@ async function getHomeData(params) {
 						filter: buildFilter({ child_id: childId }),
 						page_size: 10
 					},
-					dataType: 'json'
+					dataType: 'json',
+					timeout: 30000
 				})
 				if (response.data.code === 0) {
 					let rewards = response.data.data.items || []
